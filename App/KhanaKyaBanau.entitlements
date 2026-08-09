@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Deliberately empty.
+
+	  Push needs `aps-environment`, which a **free** Apple ID cannot provision —
+	  adding it here would break installing on a personal device for anyone without
+	  a paid Apple Developer Program membership. It also buys nothing today: push
+	  stays switched off until Resources/GoogleService-Info.plist is replaced with a
+	  real one (PushService.looksReal checks for the REPLACE_ME sentinel).
+
+	  With a paid membership and a real Firebase plist, build with:
+	      KKB_ENTITLEMENTS=App/KhanaKyaBanau-Push.entitlements
+	  or set that in project.yml.
+	-->
+</dict>
+</plist>
