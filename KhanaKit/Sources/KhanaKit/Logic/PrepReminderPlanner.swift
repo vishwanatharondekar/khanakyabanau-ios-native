@@ -36,15 +36,19 @@ public enum PrepReminderPlanner {
     /// seven days is enough, which is roughly the cadence of planning a week.
     public static let horizonDays = 7
 
-    /// The week keys needed to cover every target day inside the horizon — at most
-    /// two, and exactly one when the horizon does not straddle a Monday.
+    /// The week keys needed to cover every target day inside the horizon.
+    ///
+    /// [startOffset] is 1 for the evening reminder, whose earliest target is
+    /// tomorrow, and 0 for the afternoon one, which fires on the target day itself
+    /// and so needs the week containing today.
     public static func weekKeys(
         from now: PlanDate,
-        horizonDays: Int = horizonDays
+        horizonDays: Int = horizonDays,
+        startOffset: Int = 1
     ) -> [String] {
         guard horizonDays > 0 else { return [] }
         var keys: [String] = []
-        for offset in 1...horizonDays {
+        for offset in startOffset..<(startOffset + horizonDays) {
             let key = WeekDates.format(WeekDates.mondayOf(now.adding(days: offset)))
             if !keys.contains(key) { keys.append(key) }
         }
@@ -105,6 +109,59 @@ public enum PrepReminderPlanner {
         }
 
         // Chronological, so the pending list reads the way the week does.
+        return reminders.sorted { $0.fireDate.epochDays < $1.fireDate.epochDays }
+    }
+
+    /// The afternoon reminders to have pending right now.
+    ///
+    /// Differs from `reminders(...)` in one load-bearing way: `fireDate` is the
+    /// target date itself rather than the evening before, because this reminder is
+    /// about the day it fires on.
+    public static func afternoonReminders(
+        plans: [MealPlan],
+        from now: PlanDate,
+        hour: Int,
+        currentHour: Int,
+        enabledTypes: [MealType] = MealType.allCases,
+        horizonDays: Int = horizonDays
+    ) -> [PrepReminder] {
+        var reminders: [PrepReminder] = []
+        var seen: Set<Int> = []
+
+        for plan in plans {
+            guard let weekStart = PlanDate(iso: plan.weekStartDate) else { continue }
+
+            for (day, targetDate) in WeekDates.daysOfWeek(from: weekStart) {
+                // Fires on the day it describes.
+                let fireDate = targetDate
+                let offset = fireDate - now
+                guard offset >= 0, offset < horizonDays else { continue }
+
+                // Today's is only worth setting if its hour has not gone by.
+                if offset == 0, currentHour >= hour { continue }
+
+                let items = PrepAfternoon.itemsForThisAfternoon(
+                    plan.meals(for: day), enabledTypes: enabledTypes
+                )
+                guard !items.isEmpty else { continue }
+
+                // Two plans overlapping on a day would otherwise stack two
+                // notifications on the same afternoon.
+                guard seen.insert(targetDate.epochDays).inserted else { continue }
+
+                let copy = PrepAfternoon.buildAfternoonReminderCopy(items: items)
+                reminders.append(
+                    PrepReminder(
+                        targetDate: targetDate,
+                        fireDate: fireDate,
+                        title: copy.title,
+                        body: copy.body,
+                        lines: copy.lines
+                    )
+                )
+            }
+        }
+
         return reminders.sorted { $0.fireDate.epochDays < $1.fireDate.epochDays }
     }
 }
