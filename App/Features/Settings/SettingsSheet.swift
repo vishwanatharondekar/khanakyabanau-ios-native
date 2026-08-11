@@ -218,9 +218,9 @@ struct SettingsSheet: View {
             onCancel: close,
             onConfirm: {
                 Task {
-                    // Only ask for the system prompt when switching the feature on,
-                    // and only if it hasn't been answered already.
-                    if reminders.enabled, !env.push.areNotificationsEnabled {
+                    // Only ask for the system prompt when switching either reminder
+                    // on, and only if it hasn't been answered already.
+                    if reminders.enabled || reminders.afternoonEnabled, !env.push.areNotificationsEnabled {
                         await env.push.requestAuthorization()
                     }
                     save(
