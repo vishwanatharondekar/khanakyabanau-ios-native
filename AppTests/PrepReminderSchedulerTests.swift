@@ -63,12 +63,13 @@ final class PrepReminderSchedulerTests: XCTestCase {
     private func makeScheduler(
         center: FakeNotificationCenter,
         reminders: PrepReminderSettings = PrepReminderSettings(enabled: true, hour: 21),
-        plans: [MealPlan]
+        plans: [MealPlan] = [],
+        plansForWeeks: (([String]) async -> [MealPlan])? = nil
     ) -> PrepReminderScheduler {
         PrepReminderScheduler(
             center: center,
             preferences: { (reminders, MealType.allCases) },
-            plansForWeeks: { _ in plans }
+            plansForWeeks: plansForWeeks ?? { _ in plans }
         )
     }
 
@@ -246,15 +247,22 @@ final class PrepReminderSchedulerTests: XCTestCase {
 
     // MARK: - Afternoon reminders
 
-    /// A week of 2026-08-10 with an 8-hour dinner soak every day.
+    /// A week of 2026-08-10 with an 8-hour dinner soak every day, plus an
+    /// evening-eligible lunch soak on the Tuesday.
     ///
     /// 8 h before a 20:00 dinner is a 12:00 start: inside the afternoon band and
     /// outside the evening one, so the two reminders can be told apart by content.
+    /// The Tuesday lunch soak — 480 min before a 13:00 lunch starts by 05:00
+    /// (300 min from midnight), under the evening path's 07:00 cutoff — is picked
+    /// up by the *evening* path instead, so a run with both reminders enabled has
+    /// something to schedule under each prefix. That proves the two sets genuinely
+    /// coexist under one `cancelAll()` sweep, not just that one of them is present.
     private func weekWithAfternoonPrep() -> [MealPlan] {
         var plan = MealPlan.empty(weekStartDate: "2026-08-10")
         for (day, _) in WeekDates.daysOfWeek(from: PlanDate(iso: "2026-08-10")!) {
             plan.meals[day.key] = DayMeals(dinner: soak("Chole"))
         }
+        plan.meals["tuesday"] = DayMeals(lunch: soak("Rajma"), dinner: soak("Chole"))
         return [plan]
     }
 
@@ -275,8 +283,18 @@ final class PrepReminderSchedulerTests: XCTestCase {
             identifiers.contains { $0.hasPrefix("kkb.prep.pm.") },
             "Expected an afternoon request, got \(identifiers)"
         )
+        // The fixture's Tuesday lunch soak is evening-eligible, so both prefixes
+        // must actually coexist here — not just the afternoon one, which would
+        // trivially satisfy the weaker check below on its own.
+        XCTAssertTrue(
+            identifiers.contains { $0.hasPrefix("kkb.prep.") && !$0.hasPrefix("kkb.prep.pm.") },
+            "Expected an evening request alongside the afternoon one, got \(identifiers)"
+        )
         // cancelAll only sweeps the shared prefix, so every request must carry it.
         XCTAssertTrue(identifiers.allSatisfy { $0.hasPrefix("kkb.prep.") })
+
+        await scheduler.cancelAll()
+        XCTAssertTrue(center.requests.isEmpty, "cancelAll must clear both prefixes")
     }
 
     /// The two reminders are gated independently — this is the regression an early
@@ -321,5 +339,53 @@ final class PrepReminderSchedulerTests: XCTestCase {
         // The distinguishing assertion: the target day itself, not the day before.
         XCTAssertEqual(trigger?.dateComponents.day, 10)
         XCTAssertEqual(trigger?.dateComponents.hour, 11)
+    }
+
+    /// Only the Monday of the week containing `today` (2026-08-03 — the week
+    /// holding Sunday 2026-08-09, not 2026-08-10) carries a plan, keyed exactly as
+    /// `weekKeys` would key it. A reminder can appear only if that key was actually
+    /// requested.
+    private func weekContainingToday() -> [String: MealPlan] {
+        var plan = MealPlan.empty(weekStartDate: "2026-08-03")
+        plan.meals["sunday"] = DayMeals(dinner: soak("Chole"))
+        return ["2026-08-03": plan]
+    }
+
+    /// Regression test for `startOffset: 0`.
+    ///
+    /// Every other afternoon test in this file places its target days in the week
+    /// starting 2026-08-10 — offsets 1 through 6 from `today` — so none of them
+    /// would notice if the afternoon path quietly fell back to `weekKeys`'s default
+    /// `startOffset: 1`: that default still reaches 2026-08-10. What it would never
+    /// reach again is the week containing `today` itself (2026-08-03), which is
+    /// exactly the case an `offset == 0` target day needs.
+    ///
+    /// This stubs `plansForWeeks` to key off the requested week list directly,
+    /// rather than ignoring it as `makeScheduler`'s default stub does, so the two
+    /// `startOffset` values are actually distinguishable: under `0`,
+    /// `"2026-08-03"` is among the requested keys and this stub answers it; under
+    /// the default `1`, it never is requested, and the stub has nothing to give.
+    func testAfternoonPathRequestsTheWeekContainingTodayViaStartOffsetZero() async {
+        let center = FakeNotificationCenter()
+        let byWeek = weekContainingToday()
+        let scheduler = makeScheduler(
+            center: center,
+            reminders: PrepReminderSettings(
+                enabled: false, hour: 21, afternoonEnabled: true, afternoonHour: 11
+            ),
+            plansForWeeks: { keys in keys.compactMap { byWeek[$0] } }
+        )
+
+        // The target day (2026-08-09) is `offset == 0` from `today`, which the
+        // planner only admits while `currentHour < hour` — so this has to stay
+        // below the afternoon hour (11) for the reminder to survive that guard.
+        await scheduler.reschedule(now: today, currentHour: 9)
+
+        let identifiers = center.requests.map(\.identifier)
+        XCTAssertFalse(
+            identifiers.isEmpty,
+            "startOffset: 0 should have surfaced the week containing today"
+        )
+        XCTAssertTrue(identifiers.contains("kkb.prep.pm.2026-08-09"))
     }
 }
