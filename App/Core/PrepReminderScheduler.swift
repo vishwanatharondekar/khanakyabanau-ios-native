@@ -59,6 +59,9 @@ extension UNUserNotificationCenter: NotificationScheduling {
 final class PrepReminderScheduler {
     /// Prefix for our requests, so rescheduling only ever clears our own.
     static let identifierPrefix = "kkb.prep."
+    /// Afternoon requests. Still under `identifierPrefix`, so `cancelAll` sweeps
+    /// both without knowing about this one.
+    static let afternoonIdentifierPrefix = identifierPrefix + "pm."
 
     private let center: any NotificationScheduling
     /// Read afresh on every reschedule, so a settings change needs no re-wiring.
@@ -102,20 +105,42 @@ final class PrepReminderScheduler {
         await cancelAll()
 
         let (reminders, enabledTypes) = preferences()
-        guard reminders.enabled else { return }
 
         let status = await center.authorizationStatus()
         guard status == .authorized || status == .provisional else { return }
 
-        let planned = await plannedReminders(
-            now: now,
-            hour: reminders.hour,
-            currentHour: currentHour ?? Calendar.current.component(.hour, from: Date()),
-            enabledTypes: enabledTypes
-        )
+        let resolvedHour = currentHour ?? Calendar.current.component(.hour, from: Date())
 
-        for reminder in planned {
-            await add(reminder, at: reminders.hour)
+        if reminders.enabled {
+            let planned = await plannedReminders(
+                now: now,
+                hour: reminders.hour,
+                currentHour: resolvedHour,
+                enabledTypes: enabledTypes
+            )
+            for reminder in planned {
+                await add(reminder, at: reminders.hour, identifierPrefix: Self.identifierPrefix)
+            }
+        }
+
+        if reminders.afternoonEnabled {
+            let plans = await plansForWeeks(
+                PrepReminderPlanner.weekKeys(from: now, startOffset: 0)
+            )
+            let planned = PrepReminderPlanner.afternoonReminders(
+                plans: plans,
+                from: now,
+                hour: reminders.afternoonHour,
+                currentHour: resolvedHour,
+                enabledTypes: enabledTypes
+            )
+            for reminder in planned {
+                await add(
+                    reminder,
+                    at: reminders.afternoonHour,
+                    identifierPrefix: Self.afternoonIdentifierPrefix
+                )
+            }
         }
     }
 
@@ -212,7 +237,11 @@ final class PrepReminderScheduler {
     }
 #endif
 
-    private func add(_ reminder: PrepReminder, at hour: Int) async {
+    private func add(
+        _ reminder: PrepReminder,
+        at hour: Int,
+        identifierPrefix: String
+    ) async {
         let content = UNMutableNotificationContent()
         content.title = reminder.title
         content.body = reminder.body
@@ -220,6 +249,7 @@ final class PrepReminderScheduler {
         // Mirrors the server's data-only payload so a tap is handled identically.
         content.userInfo = [
             "type": "prep_reminder",
+            "slot": identifierPrefix == Self.afternoonIdentifierPrefix ? "afternoon" : "evening",
             "targetDate": reminder.targetDate.isoString,
             "lines": reminder.lines,
         ]
@@ -232,7 +262,7 @@ final class PrepReminderScheduler {
         components.minute = 0
 
         let request = UNNotificationRequest(
-            identifier: Self.identifierPrefix + reminder.targetDate.isoString,
+            identifier: identifierPrefix + reminder.targetDate.isoString,
             content: content,
             trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
         )

@@ -167,7 +167,9 @@ final class SettingsRepository {
             NotificationPreferencesRequest(
                 prepReminders: settings.enabled,
                 hourLocal: settings.hour,
-                timezone: TimeZone.current.identifier
+                timezone: TimeZone.current.identifier,
+                afternoonPrepReminders: settings.afternoonEnabled,
+                afternoonHourLocal: settings.afternoonHour
             )
         ))
         prepReminders = settings

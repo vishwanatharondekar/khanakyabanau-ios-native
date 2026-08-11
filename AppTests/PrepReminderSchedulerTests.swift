@@ -148,7 +148,9 @@ final class PrepReminderSchedulerTests: XCTestCase {
         let center = FakeNotificationCenter()
         let scheduler = makeScheduler(
             center: center,
-            reminders: PrepReminderSettings(enabled: false, hour: 21),
+            reminders: PrepReminderSettings(
+                enabled: false, hour: 21, afternoonEnabled: false, afternoonHour: 11
+            ),
             plans: weekWithOnePrepDay()
         )
 
@@ -240,5 +242,84 @@ final class PrepReminderSchedulerTests: XCTestCase {
 
         await scheduler.reschedule(now: today, currentHour: 9)
         XCTAssertEqual(center.requests.count, 1)
+    }
+
+    // MARK: - Afternoon reminders
+
+    /// A week of 2026-08-10 with an 8-hour dinner soak every day.
+    ///
+    /// 8 h before a 20:00 dinner is a 12:00 start: inside the afternoon band and
+    /// outside the evening one, so the two reminders can be told apart by content.
+    private func weekWithAfternoonPrep() -> [MealPlan] {
+        var plan = MealPlan.empty(weekStartDate: "2026-08-10")
+        for (day, _) in WeekDates.daysOfWeek(from: PlanDate(iso: "2026-08-10")!) {
+            plan.meals[day.key] = DayMeals(dinner: soak("Chole"))
+        }
+        return [plan]
+    }
+
+    func testAfternoonRemindersAreScheduledUnderTheirOwnPrefix() async {
+        let center = FakeNotificationCenter()
+        let scheduler = makeScheduler(
+            center: center,
+            reminders: PrepReminderSettings(
+                enabled: true, hour: 21, afternoonEnabled: true, afternoonHour: 11
+            ),
+            plans: weekWithAfternoonPrep()
+        )
+
+        await scheduler.reschedule(now: today, currentHour: 9)
+
+        let identifiers = center.requests.map(\.identifier)
+        XCTAssertTrue(
+            identifiers.contains { $0.hasPrefix("kkb.prep.pm.") },
+            "Expected an afternoon request, got \(identifiers)"
+        )
+        // cancelAll only sweeps the shared prefix, so every request must carry it.
+        XCTAssertTrue(identifiers.allSatisfy { $0.hasPrefix("kkb.prep.") })
+    }
+
+    /// The two reminders are gated independently — this is the regression an early
+    /// `guard reminders.enabled` in reschedule() would cause.
+    func testAfternoonRemindersSurviveTheEveningOneBeingOff() async {
+        let center = FakeNotificationCenter()
+        let scheduler = makeScheduler(
+            center: center,
+            reminders: PrepReminderSettings(
+                enabled: false, hour: 21, afternoonEnabled: true, afternoonHour: 11
+            ),
+            plans: weekWithAfternoonPrep()
+        )
+
+        await scheduler.reschedule(now: today, currentHour: 9)
+
+        let identifiers = center.requests.map(\.identifier)
+        XCTAssertFalse(identifiers.isEmpty, "The afternoon reminder is independent")
+        XCTAssertTrue(identifiers.allSatisfy { $0.hasPrefix("kkb.prep.pm.") })
+    }
+
+    func testAfternoonReminderFiresOnTheTargetDayAtTheChosenHour() async throws {
+        let center = FakeNotificationCenter()
+        let scheduler = makeScheduler(
+            center: center,
+            reminders: PrepReminderSettings(
+                enabled: false, hour: 21, afternoonEnabled: true, afternoonHour: 11
+            ),
+            plans: weekWithAfternoonPrep()
+        )
+
+        await scheduler.reschedule(now: today, currentHour: 9)
+
+        let request = try XCTUnwrap(
+            center.requests.first { $0.identifier == "kkb.prep.pm.2026-08-10" }
+        )
+        XCTAssertEqual(request.content.title, "Prep this afternoon")
+        XCTAssertEqual(request.content.body, "Chole: Soak chole")
+        XCTAssertEqual(request.content.userInfo["slot"] as? String, "afternoon")
+
+        let trigger = request.trigger as? UNCalendarNotificationTrigger
+        // The distinguishing assertion: the target day itself, not the day before.
+        XCTAssertEqual(trigger?.dateComponents.day, 10)
+        XCTAssertEqual(trigger?.dateComponents.hour, 11)
     }
 }
