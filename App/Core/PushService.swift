@@ -152,22 +152,35 @@ extension PushService: MessagingDelegate {
     }
 }
 
+/// Both of these are **main-actor isolated on purpose**, and must stay that way.
+///
+/// `UNUserNotificationCenterDelegate` is an Objective-C protocol whose real methods
+/// take a completion handler; the `async` spellings are bridged, and the bridge
+/// calls that completion handler on whatever executor the function finishes on.
+/// Declared `nonisolated`, the body runs on the cooperative pool, so UIKit's own
+/// completion handler — which takes the app snapshot after a tap — was invoked off
+/// the main thread and tripped `'Call must be made on main thread'`, crashing the
+/// app every time a reminder was tapped. Inheriting the class's `@MainActor` keeps
+/// the whole hop on the main thread, handler included.
 extension PushService: UNUserNotificationCenterDelegate {
     /// Prep reminders are worth showing even with the app open — the user is
     /// usually in the planner when the evening nudge lands.
-    nonisolated func userNotificationCenter(
+    func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
         [.banner, .sound, .list]
     }
 
-    nonisolated func userNotificationCenter(
+    func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
         let info = response.notification.request.content.userInfo
         guard info["type"] as? String == "prep_reminder" else { return }
-        await MainActor.run { self.pendingDestination = .tomorrow }
+        // Absent slot means evening: the server keeps `type` shared for
+        // compatibility with shipped builds, and reminders scheduled before the
+        // midday one existed carry no slot either.
+        pendingDestination = info["slot"] as? String == "afternoon" ? .today : .tomorrow
     }
 }

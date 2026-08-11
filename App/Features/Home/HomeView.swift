@@ -80,6 +80,12 @@ struct HomeView: View {
                 // any of these routes can be reached.
                 if let todayModel {
                     switch route {
+                    case .today:
+                        // Never actually pushed: `consumePendingDestination` clears
+                        // `path` for `.today` instead of appending it, since Today is
+                        // this stack's root. Kept only so this switch stays
+                        // exhaustive as `AppRoute` gains cases.
+                        EmptyView()
                     case .tomorrow:
                         TomorrowView(
                             model: todayModel,
@@ -168,11 +174,15 @@ struct HomeView: View {
         }
     }
 
-    /// A prep-reminder tap asks for Tomorrow. Consumed once so a redraw doesn't
-    /// re-navigate, and so a stale value can never wedge later notifications.
+    /// A prep-reminder tap asks for Tomorrow, or for Today when it came from the
+    /// midday reminder. Consumed once so a redraw doesn't re-navigate, and so a
+    /// stale value can never wedge later notifications.
     private func consumePendingDestination() {
         guard let destination = env.push.pendingDestination else { return }
-        path = [destination]
+        // Today is this stack's root rather than a pushed route, so it is reached
+        // by clearing the path — pushing `.today` would stack a duplicate screen
+        // over the one already showing.
+        path = destination == .today ? [] : [destination]
         env.push.pendingDestination = nil
     }
 

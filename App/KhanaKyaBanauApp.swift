@@ -4,6 +4,7 @@ import SwiftUI
 /// Sub-screens reachable from Home. There is no route table beyond this: the
 /// product has one root switch (session state) and two drill-downs.
 enum AppRoute: Hashable {
+    case today
     case tomorrow
     case mealDetail(day: DayOfWeek, type: MealType)
 }
