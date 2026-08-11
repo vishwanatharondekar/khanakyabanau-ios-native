@@ -229,7 +229,10 @@ struct SettingsSheet: View {
                             await env.prepReminders.reschedule()
                         },
                         analytics: AnalyticsEvents.Preferences.updateNotifications,
-                        parameters: ["prep_reminders": reminders.enabled]
+                        parameters: [
+                            "prep_reminders": reminders.enabled,
+                            "afternoon_prep_reminders": reminders.afternoonEnabled,
+                        ]
                     )
                 }
             }
@@ -270,6 +273,40 @@ struct SettingsSheet: View {
                                     isSelected: reminders.hour == hour
                                 ) {
                                     reminders.hour = hour
+                                }
+                            }
+                        }
+                    }
+                    .transition(.opacity)
+                }
+
+                Divider().overlay(Kkb.hairline)
+
+                Text("""
+                Tonight's dinner can need a head start too — a 6-hour soak for an 8 PM \
+                dinner has to go in water at 2 PM.
+                """)
+                .kkbFont(.bodyMedium)
+                .foregroundStyle(Kkb.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+                KkbToggleRow(
+                    title: "Remind me at midday",
+                    isOn: $reminders.afternoonEnabled
+                )
+
+                if reminders.afternoonEnabled {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Remind me at".eyebrow)
+                            .kkbFont(.sectionLabel)
+                            .foregroundStyle(Kkb.accentText)
+                        HStack(spacing: 8) {
+                            ForEach(PrepReminderSettings.afternoonSelectableHours, id: \.self) { hour in
+                                KkbChip(
+                                    title: hourLabel(hour),
+                                    isSelected: reminders.afternoonHour == hour
+                                ) {
+                                    reminders.afternoonHour = hour
                                 }
                             }
                         }
@@ -324,6 +361,7 @@ struct SettingsSheet: View {
                 #endif
             }
             .animation(.snappy(duration: 0.2), value: reminders.enabled)
+            .animation(.snappy(duration: 0.2), value: reminders.afternoonEnabled)
         }
     }
 

@@ -96,10 +96,14 @@ struct TomorrowCard: View {
 }
 
 /// The marigold "PREP TONIGHT" box. Compact on the Today card, full on the
-/// Tomorrow screen.
+/// Tomorrow screen. Also reused, compact, for this afternoon's prep on Today —
+/// `heading` and `timePhrase` default to the evening wording so those two call
+/// sites are unaffected.
 struct PrepTonightBox: View {
     var items: [PrepTonightItem]
     var isCompact: Bool
+    var heading: String = "PREP TONIGHT"
+    var timePhrase: String = "tonight"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -107,7 +111,7 @@ struct PrepTonightBox: View {
                 Image(systemName: "clock")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Kkb.marigoldText)
-                Text("PREP TONIGHT")
+                Text(heading)
                     .kkbFont(.sectionLabel)
                     .tracking(3)
                     .foregroundStyle(Kkb.marigoldText)
@@ -116,7 +120,7 @@ struct PrepTonightBox: View {
 
             if isCompact, items.count > 3 {
                 // Too many to list on a summary card; lead with the most urgent.
-                Text("\(items.count) thing\(items.count == 1 ? "" : "s") to prep tonight")
+                Text("\(items.count) thing\(items.count == 1 ? "" : "s") to prep \(timePhrase)")
                     .kkbFont(.bodyMedium)
                     .foregroundStyle(Kkb.textPrimary)
                 if let first = items.first {

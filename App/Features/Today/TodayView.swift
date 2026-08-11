@@ -52,6 +52,15 @@ struct TodayView: View {
                         )
                     }
 
+                    if !model.afternoonPrep.isEmpty {
+                        PrepTonightBox(
+                            items: model.afternoonPrep,
+                            isCompact: true,
+                            heading: "PREP THIS AFTERNOON",
+                            timePhrase: "this afternoon"
+                        )
+                    }
+
                     TomorrowCard(
                         section: model.tomorrow,
                         enabledTypes: model.enabledTypes,

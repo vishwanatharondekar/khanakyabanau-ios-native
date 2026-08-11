@@ -38,6 +38,12 @@ final class TodayViewModel {
         PrepTonight.itemsForTomorrow(tomorrow.meals, enabledTypes: enabledTypes)
     }
 
+    /// Today's prep that still has to be started this afternoon — the same set the
+    /// midday reminder covers.
+    var afternoonPrep: [PrepTonightItem] {
+        PrepAfternoon.itemsForThisAfternoon(today.meals, enabledTypes: enabledTypes)
+    }
+
     private var hasLoaded = false
 
     /// First load only. Re-entering a screen must not refetch — Tomorrow asks for
