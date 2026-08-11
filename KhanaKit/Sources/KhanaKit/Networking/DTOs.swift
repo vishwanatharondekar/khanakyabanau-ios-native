@@ -362,19 +362,25 @@ public struct RegisterDeviceRequest: Encodable, Sendable {
     public var timezone: String
     public var prepReminders: Bool?
     public var hourLocal: Int?
+    public var afternoonPrepReminders: Bool?
+    public var afternoonHourLocal: Int?
 
     public init(
         token: String,
         platform: String = "ios",
         timezone: String,
         prepReminders: Bool? = nil,
-        hourLocal: Int? = nil
+        hourLocal: Int? = nil,
+        afternoonPrepReminders: Bool? = nil,
+        afternoonHourLocal: Int? = nil
     ) {
         self.token = token
         self.platform = platform
         self.timezone = timezone
         self.prepReminders = prepReminders
         self.hourLocal = hourLocal
+        self.afternoonPrepReminders = afternoonPrepReminders
+        self.afternoonHourLocal = afternoonHourLocal
     }
 }
 
@@ -388,17 +394,23 @@ public struct NotificationPreferencesRequest: Encodable, Sendable {
     public var hourLocal: Int?
     public var timezone: String?
     public var weeklyMenuEmails: Bool?
+    public var afternoonPrepReminders: Bool?
+    public var afternoonHourLocal: Int?
 
     public init(
         prepReminders: Bool? = nil,
         hourLocal: Int? = nil,
         timezone: String? = nil,
-        weeklyMenuEmails: Bool? = nil
+        weeklyMenuEmails: Bool? = nil,
+        afternoonPrepReminders: Bool? = nil,
+        afternoonHourLocal: Int? = nil
     ) {
         self.prepReminders = prepReminders
         self.hourLocal = hourLocal
         self.timezone = timezone
         self.weeklyMenuEmails = weeklyMenuEmails
+        self.afternoonPrepReminders = afternoonPrepReminders
+        self.afternoonHourLocal = afternoonHourLocal
     }
 }
 
@@ -406,9 +418,13 @@ public struct NotificationPreferencesDTO: Decodable, Sendable {
     public var prepReminders: Bool
     public var hourLocal: Int
     public var timezone: String?
+    /// Optional rather than defaulted, so a server that omits it can be told apart
+    /// from one that sent `false`. See NotificationPreferencesDTOTests.
+    public var afternoonPrepReminders: Bool?
+    public var afternoonHourLocal: Int
 
     private enum CodingKeys: String, CodingKey {
-        case prepReminders, hourLocal, timezone
+        case prepReminders, hourLocal, timezone, afternoonPrepReminders, afternoonHourLocal
     }
 
     public init(from decoder: any Decoder) throws {
@@ -416,6 +432,9 @@ public struct NotificationPreferencesDTO: Decodable, Sendable {
         prepReminders = (try? c.decode(Bool.self, forKey: .prepReminders)) ?? true
         hourLocal = (try? c.decode(Int.self, forKey: .hourLocal)) ?? PrepReminderSettings.defaultHour
         timezone = try? c.decode(String.self, forKey: .timezone)
+        afternoonPrepReminders = try? c.decode(Bool.self, forKey: .afternoonPrepReminders)
+        afternoonHourLocal = (try? c.decode(Int.self, forKey: .afternoonHourLocal))
+            ?? PrepReminderSettings.afternoonDefaultHour
     }
 }
 
@@ -438,7 +457,12 @@ public struct NotificationPreferencesResponse: Decodable, Sendable {
     public var settings: PrepReminderSettings {
         PrepReminderSettings(
             enabled: notificationPreferences?.prepReminders ?? true,
-            hour: notificationPreferences?.hourLocal ?? PrepReminderSettings.defaultHour
+            hour: notificationPreferences?.hourLocal ?? PrepReminderSettings.defaultHour,
+            // Inherit when the server omits it, matching the server's own rule.
+            afternoonEnabled: notificationPreferences?.afternoonPrepReminders
+                ?? notificationPreferences?.prepReminders ?? true,
+            afternoonHour: notificationPreferences?.afternoonHourLocal
+                ?? PrepReminderSettings.afternoonDefaultHour
         )
     }
 }

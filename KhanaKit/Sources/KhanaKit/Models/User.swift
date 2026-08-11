@@ -231,16 +231,31 @@ public enum SupportedLanguage: String, CaseIterable, Sendable, Identifiable {
 }
 
 /// Local mirror of the server's `notificationPreferences`. `hour` is the local
-/// hour the evening nudge should arrive; the server derives its own UTC slot.
+/// hour the evening nudge should arrive and `afternoonHour` the midday one; the
+/// server derives its own UTC slots.
 public struct PrepReminderSettings: Hashable, Sendable {
     public var enabled: Bool
     public var hour: Int
+    public var afternoonEnabled: Bool
+    public var afternoonHour: Int
 
     public static let defaultHour = 21
     public static let selectableHours = Array(19...23)
 
-    public init(enabled: Bool = true, hour: Int = PrepReminderSettings.defaultHour) {
+    /// Late enough that the morning is over, early enough to still act: an 8-hour
+    /// soak for a 20:00 dinner has to start at 12:00.
+    public static let afternoonDefaultHour = 11
+    public static let afternoonSelectableHours = Array(10...14)
+
+    public init(
+        enabled: Bool = true,
+        hour: Int = PrepReminderSettings.defaultHour,
+        afternoonEnabled: Bool = true,
+        afternoonHour: Int = PrepReminderSettings.afternoonDefaultHour
+    ) {
         self.enabled = enabled
         self.hour = hour
+        self.afternoonEnabled = afternoonEnabled
+        self.afternoonHour = afternoonHour
     }
 }
