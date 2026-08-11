@@ -183,6 +183,12 @@ struct HomeView: View {
         // by clearing the path — pushing `.today` would stack a duplicate screen
         // over the one already showing.
         path = destination == .today ? [] : [destination]
+        // The segmented tab persists across foregrounds, so a user last parked on
+        // "The Week" would otherwise land on the root with no prep card visible —
+        // Today's Menu is index 0 in the `SegmentedTabs` options above.
+        if destination == .today {
+            tab = 0
+        }
         env.push.pendingDestination = nil
     }
 
