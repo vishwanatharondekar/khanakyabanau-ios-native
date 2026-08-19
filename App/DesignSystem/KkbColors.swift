@@ -63,9 +63,11 @@ enum Kkb {
 
     // MARK: - Semantic, theme-aware
 
-    /// Page background. Dark mode uses ink-900 rather than pure black so the warm
-    /// cast survives.
-    static let background = adaptive(light: cream100, dark: Color(hex: 0x2A1F17))
+    /// Page background. Dark mode is a neutral gray, not ink-900: at 1.5% luminance
+    /// the brown's warmth was invisible and the page just read as black. Capped just
+    /// under `surface` (0.0281) so cards stay the lighter of the two — see
+    /// `testDarkPageBackgroundIsNeutralAndSitsBelowTheCards`.
+    static let background = adaptive(light: cream100, dark: Color(hex: 0x2E2E30))
     /// Cards, sheets, raised surfaces.
     static let surface = adaptive(light: cream50, dark: Color(hex: 0x3A2C21))
     /// A step further back than `surface` — thumbnail wells, inset rows.

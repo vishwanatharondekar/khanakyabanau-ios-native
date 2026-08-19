@@ -51,6 +51,24 @@ struct KkbBackground<Content: View>: View {
     }
 }
 
+extension View {
+    /// Paints the app ground *inside* the current container.
+    ///
+    /// `AppRootView` wraps the whole app in `KkbBackground`, but that is not enough
+    /// on its own: UIKit-backed containers — `NavigationStack`, sheets — paint an
+    /// opaque `systemBackground` of their own *over* it. In dark mode
+    /// `systemBackground` is pure black, so every signed-in screen rendered on
+    /// black with the palette and all three washes hidden underneath. Light mode
+    /// disguised it, because there `systemBackground` is white and the page is
+    /// near-white cream anyway.
+    ///
+    /// Any screen inside such a container has to re-apply the ground below its own
+    /// content. Guarded by `testNavigationStackShellShowsThePageGround`.
+    func kkbPageGround() -> some View {
+        background(KkbBackground { Color.clear })
+    }
+}
+
 /// The product's signature card: cream stock, a hairline terracotta rule and a
 /// soft paper shadow. Everything that looks like a card in this app is one of these.
 struct PaperCard<Content: View>: View {

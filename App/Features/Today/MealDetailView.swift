@@ -30,7 +30,7 @@ struct MealDetailView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .background(KkbBackground { Color.clear })
+        .kkbPageGround()
         .navigationBarBackButtonHidden()
         .kkbToast($toast)
         .task {

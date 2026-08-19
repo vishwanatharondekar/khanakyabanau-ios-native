@@ -75,6 +75,11 @@ struct HomeView: View {
                 }
                 Spacer(minLength: 0)
             }
+            // The NavigationStack above paints an opaque `systemBackground` over
+            // `AppRootView`'s ground — pure black in dark mode. The shell has to
+            // draw the page ground itself, inside the stack.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .kkbPageGround()
             .navigationDestination(for: AppRoute.self) { route in
                 // `todayModel` is created in this view's `.task`, which runs before
                 // any of these routes can be reached.
