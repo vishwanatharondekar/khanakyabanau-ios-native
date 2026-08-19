@@ -266,7 +266,7 @@ struct SettingsSheet: View {
                         Text("Remind me at".eyebrow)
                             .kkbFont(.sectionLabel)
                             .foregroundStyle(Kkb.accentText)
-                        HStack(spacing: 8) {
+                        FlowLayout(spacing: 8) {
                             ForEach(PrepReminderSettings.selectableHours, id: \.self) { hour in
                                 KkbChip(
                                     title: hourLabel(hour),
@@ -300,7 +300,7 @@ struct SettingsSheet: View {
                         Text("Remind me at".eyebrow)
                             .kkbFont(.sectionLabel)
                             .foregroundStyle(Kkb.accentText)
-                        HStack(spacing: 8) {
+                        FlowLayout(spacing: 8) {
                             ForEach(PrepReminderSettings.afternoonSelectableHours, id: \.self) { hour in
                                 KkbChip(
                                     title: hourLabel(hour),
