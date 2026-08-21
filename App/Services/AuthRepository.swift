@@ -70,6 +70,19 @@ final class AuthRepository {
         try await api.send(Endpoints.profile, as: ProfileResponse.self).user
     }
 
+    /// Permanently deletes the account and everything it owns, then clears the
+    /// local session.
+    ///
+    /// The token is dropped only after the server confirms. A wrong password or a
+    /// dropped connection must leave the user signed in and able to try again —
+    /// clearing first would strand them with no account *and* no way back in.
+    ///
+    /// `password` is nil for a guest, who has none to re-enter.
+    func deleteAccount(password: String?) async throws {
+        try await api.send(Endpoints.deleteAccount(DeleteAccountRequest(password: password)))
+        tokenStore.clear()
+    }
+
     /// There is no server-side logout — the token is unsigned and non-revocable —
     /// so signing out is purely local.
     func logout() {

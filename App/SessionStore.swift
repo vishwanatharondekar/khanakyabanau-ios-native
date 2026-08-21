@@ -144,6 +144,26 @@ final class SessionStore {
         state = .unauthenticated
     }
 
+    /// Permanently deletes the account, then tears down the local session.
+    ///
+    /// Throws without touching any local state when the server refuses — a wrong
+    /// password has to leave the user exactly where they were.
+    ///
+    /// Unlike [signOut] this does not unregister the device first: the FCM tokens
+    /// live on the user document, so the delete takes them with it.
+    func deleteAccount(password: String?) async throws {
+        try await env.auth.deleteAccount(password: password)
+        env.analytics.track(
+            AnalyticsEvents.Auth.deleteAccount, category: AnalyticsEvents.Category.auth
+        )
+        env.analytics.reset()
+        env.settings.reset()
+        env.videos.reset()
+        env.meals.clearImageCache()
+        await env.prepReminders.cancelAll()
+        state = .unauthenticated
+    }
+
     /// The server rejected our bearer token. Android has no handling for this at
     /// all and simply shows generic errors; here we sign out cleanly instead.
     private func handleUnauthorized() async {

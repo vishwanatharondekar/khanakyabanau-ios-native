@@ -32,6 +32,14 @@ public struct GuestRequest: Encodable, Sendable {
     public init(deviceId: String) { self.deviceId = deviceId }
 }
 
+public struct DeleteAccountRequest: Encodable, Sendable {
+    /// Registered accounts re-enter their password; a guest has none. Optional so
+    /// the synthesised encoder omits the key entirely rather than sending null,
+    /// which the route would have to special-case.
+    public var password: String?
+    public init(password: String?) { self.password = password }
+}
+
 public struct UpgradeGuestRequest: Encodable, Sendable {
     public var email: String
     public var password: String

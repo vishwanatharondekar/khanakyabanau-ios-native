@@ -17,6 +17,7 @@ struct HomeView: View {
     @State private var showingDrawer = false
     @State private var activeSettings: SettingsScreen?
     @State private var showingGuestUpgrade = false
+    @State private var showingDeleteAccount = false
     @State private var videoContext: RecipeVideoContext?
     @Namespace private var segmentNamespace
 
@@ -137,6 +138,10 @@ struct HomeView: View {
                 onSignOut: {
                     showingDrawer = false
                     Task { await session.signOut() }
+                },
+                onDeleteAccount: {
+                    showingDrawer = false
+                    showingDeleteAccount = true
                 }
             )
             .presentationDetents([.medium, .large])
@@ -146,6 +151,9 @@ struct HomeView: View {
         }
         .sheet(isPresented: $showingGuestUpgrade) {
             GuestUpgradeView { activeSettings = nil }
+        }
+        .sheet(isPresented: $showingDeleteAccount) {
+            DeleteAccountView()
         }
         .sheet(item: $videoContext) { context in
             RecipeVideoSheet(context: context) { videoContext = nil }

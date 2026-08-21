@@ -12,7 +12,8 @@ import XCTest
 ///
 /// These run against the **production** backend and register one throwaway account
 /// per run under the reserved `.invalid` TLD, which can never reach a real inbox or
-/// collide with a real user.
+/// collide with a real user. The account deletes itself in a teardown block, so a
+/// run leaves nothing behind.
 @MainActor
 final class ReturningUserRoutingTests: XCTestCase {
 
@@ -65,6 +66,26 @@ final class ReturningUserRoutingTests: XCTestCase {
 
         // --- Register. A brand-new account genuinely needs onboarding. ---
         _ = try await env.auth.register(email: email, password: password, name: "iOS Test")
+
+        // The account exists from here on, so cleanup is registered now rather than
+        // at the end of the test: any assertion below can bail out early, and the
+        // throwaway account must not outlive the run either way.
+        addTeardownBlock { @MainActor in
+            // A failure partway through can leave the session signed out — the test
+            // signs out deliberately in the middle — and deleting needs a live
+            // token, so get one back first.
+            if !env.tokenStore.isAuthenticated {
+                _ = try? await env.auth.login(email: email, password: password)
+            }
+            do {
+                try await env.auth.deleteAccount(password: password)
+            } catch {
+                // Best-effort: failing to clean up must not fail a test that
+                // otherwise passed. Printing keeps the leak visible in the log.
+                print("[cleanup] could not delete \(email): \(error)")
+            }
+        }
+
         try await session.signedIn()
         guard case .needsOnboarding = session.state else {
             return XCTFail("A new account should need onboarding, got \(session.state)")
