@@ -17,6 +17,7 @@ struct HomeView: View {
     @State private var showingDrawer = false
     @State private var activeSettings: SettingsScreen?
     @State private var showingGuestUpgrade = false
+    @State private var showingDeleteAccount = false
     @State private var videoContext: RecipeVideoContext?
     @Namespace private var segmentNamespace
 
@@ -75,6 +76,11 @@ struct HomeView: View {
                 }
                 Spacer(minLength: 0)
             }
+            // The NavigationStack above paints an opaque `systemBackground` over
+            // `AppRootView`'s ground — pure black in dark mode. The shell has to
+            // draw the page ground itself, inside the stack.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .kkbPageGround()
             .navigationDestination(for: AppRoute.self) { route in
                 // `todayModel` is created in this view's `.task`, which runs before
                 // any of these routes can be reached.
@@ -132,6 +138,10 @@ struct HomeView: View {
                 onSignOut: {
                     showingDrawer = false
                     Task { await session.signOut() }
+                },
+                onDeleteAccount: {
+                    showingDrawer = false
+                    showingDeleteAccount = true
                 }
             )
             .presentationDetents([.medium, .large])
@@ -141,6 +151,9 @@ struct HomeView: View {
         }
         .sheet(isPresented: $showingGuestUpgrade) {
             GuestUpgradeView { activeSettings = nil }
+        }
+        .sheet(isPresented: $showingDeleteAccount) {
+            DeleteAccountView()
         }
         .sheet(item: $videoContext) { context in
             RecipeVideoSheet(context: context) { videoContext = nil }

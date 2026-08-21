@@ -26,6 +26,7 @@ enum AnalyticsEvents {
         static let register = "register"
         static let logout = "logout"
         static let guestStart = "guest_start"
+        static let deleteAccount = "delete_account"
     }
 
     enum Meal {

@@ -35,6 +35,16 @@ public enum Endpoints {
         Endpoint(method: .post, path: "api/auth/upgrade-guest", body: Endpoint.json(body))
     }
 
+    /// Permanently deletes the signed-in account and everything it owns.
+    ///
+    /// A wrong password answers 403, not 401: `APIClient.validate` reads a 401 on
+    /// an authenticated route as a dead session and signs the user out globally,
+    /// which is the wrong outcome for a typo.
+    public static func deleteAccount(_ body: DeleteAccountRequest) -> Endpoint {
+        Endpoint(method: .delete, path: "api/auth/delete-account",
+                 body: Endpoint.json(body))
+    }
+
     public static var profile: Endpoint {
         Endpoint(method: .get, path: "api/auth/profile")
     }

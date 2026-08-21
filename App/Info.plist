@@ -39,10 +39,13 @@
 		<key>UIColorName</key>
 		<string>LaunchBackground</string>
 	</dict>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>remote-notification</string>
-	</array>
+	<!-- No UIBackgroundModes. Remote push is not shipped in 1.0: the bundled
+	     GoogleService-Info.plist is a placeholder, so PushService.configure()
+	     bails and never registers for APNs. Declaring the background mode
+	     without a matching aps-environment entitlement earns a "Missing Push
+	     Notification Entitlement" warning on every upload. Prep reminders are
+	     local notifications and need none of this. Restore this array together
+	     with App/KhanaKyaBanau-Push.entitlements when push actually ships. -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

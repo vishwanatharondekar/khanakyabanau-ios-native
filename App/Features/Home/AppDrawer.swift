@@ -33,6 +33,9 @@ struct AppDrawer: View {
     /// create-an-account form — signing in is how they get back to their data.
     var onSignIn: () -> Void
     var onSignOut: () -> Void
+    /// Shown to guests too: a guest account holds real server-side data, and a
+    /// reviewer trying the app without signing up must still be able to find this.
+    var onDeleteAccount: () -> Void
 
     private var user: User? { session.user }
     private var isGuest: Bool { session.isGuest }
@@ -92,6 +95,13 @@ struct AppDrawer: View {
                             action: onSignOut
                         )
                     }
+
+                    DrawerRow(
+                        title: "Delete account",
+                        systemImage: "trash",
+                        tint: Kkb.terracotta700,
+                        action: onDeleteAccount
+                    )
                 }
                 .padding(20)
             }

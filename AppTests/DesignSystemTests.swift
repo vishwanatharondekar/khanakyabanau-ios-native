@@ -122,6 +122,29 @@ final class DesignSystemTests: XCTestCase {
         }
     }
 
+    /// The dark page ground must be neutral, and must stay below the cards.
+    ///
+    /// It used to be ink-900 — a warm brown at 1.5% relative luminance. At that
+    /// darkness the warmth is invisible on device and only the blackness reads, so
+    /// the page came across as plain black. The brand warmth is carried by the cream
+    /// text and the tinted chips sitting on the ground, not by the ground itself.
+    ///
+    /// The second assertion is the ceiling: `surface` is unchanged warm brown at
+    /// 0.0281, so lifting the page past it would flip cards from raised paper stock
+    /// to inset panels while `PaperCard`'s drop shadow still says "raised". Anyone
+    /// lightening the page further has to lift the cards in the same commit.
+    func testDarkPageBackgroundIsNeutralAndSitsBelowTheCards() {
+        let (r, g, b, _) = rgba(Kkb.background, dark)
+        XCTAssertLessThan(
+            max(r, g, b) - min(r, g, b), 0.02,
+            "the dark page ground has a \(String(format: "%.3f", max(r, g, b) - min(r, g, b))) channel spread — it is tinted, not neutral"
+        )
+        XCTAssertLessThan(
+            relativeLuminance(Kkb.background, dark), relativeLuminance(Kkb.surface, dark),
+            "the page has risen above the cards — they will read as inset, not raised"
+        )
+    }
+
     /// Surfaces must actually get darker, and text lighter — an "adaptive" colour
     /// that moved the wrong way would still pass the inequality check above.
     func testDarkModeInvertsSurfaceAndTextLuminance() {
@@ -189,6 +212,119 @@ final class DesignSystemTests: XCTestCase {
             XCTAssertEqual(r, expected.0, accuracy: 0.01, "\(name) red")
             XCTAssertEqual(g, expected.1, accuracy: 0.01, "\(name) green")
             XCTAssertEqual(b, expected.2, accuracy: 0.01, "\(name) blue")
+        }
+    }
+
+    // MARK: - What actually reaches the screen
+    //
+    // Everything above resolves colours in isolation. It cannot catch the failure
+    // mode where the palette is right and something else is painted over it, which
+    // is what happened: `HomeView` wraps the shell in a `NavigationStack`, that
+    // container paints an opaque `systemBackground`, and in dark mode
+    // `systemBackground` is pure black. `Kkb.background` and all three washes were
+    // covered on every signed-in screen. Light mode hid it, because there
+    // `systemBackground` is white and the page is nearly-white cream anyway.
+
+    /// Renders a view for real and reads one pixel back out.
+    private func renderedPixels<V: View>(
+        _ view: V,
+        _ style: UIUserInterfaceStyle,
+        at points: [CGPoint],
+        size: CGSize = CGSize(width: 320, height: 640)
+    ) -> [(UInt8, UInt8, UInt8)] {
+        let host = UIHostingController(rootView: view)
+        host.overrideUserInterfaceStyle = style
+        let window = UIWindow(frame: CGRect(origin: .zero, size: size))
+        window.overrideUserInterfaceStyle = style
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true)
+        }
+
+        return points.map { point in
+            var data = [UInt8](repeating: 0, count: 4)
+            let ctx = CGContext(
+                data: &data, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )!
+            ctx.translateBy(x: -point.x, y: -point.y)
+            ctx.draw(image.cgImage!, in: CGRect(origin: .zero, size: size))
+            return (data[0], data[1], data[2])
+        }
+    }
+
+    /// Dead centre: all three washes fall off before reaching it, so the pixel there
+    /// is the flat ground colour with nothing added on top.
+    private func centrePixel<V: View>(
+        _ view: V,
+        _ style: UIUserInterfaceStyle,
+        size: CGSize = CGSize(width: 320, height: 640)
+    ) -> (UInt8, UInt8, UInt8) {
+        renderedPixels(view, style, at: [CGPoint(x: size.width / 2, y: size.height / 2)], size: size)[0]
+    }
+
+    private func assertGround(
+        _ pixel: (UInt8, UInt8, UInt8),
+        _ what: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let (r, g, b, _) = rgba(Kkb.background, dark)
+        let want = (UInt8((r * 255).rounded()), UInt8((g * 255).rounded()), UInt8((b * 255).rounded()))
+        let off = max(abs(Int(pixel.0) - Int(want.0)), abs(Int(pixel.1) - Int(want.1)), abs(Int(pixel.2) - Int(want.2)))
+        XCTAssertLessThan(
+            off, 6,
+            """
+            \(what) rendered #\(String(format: "%02X%02X%02X", pixel.0, pixel.1, pixel.2)) \
+            but Kkb.background in dark mode is #\(String(format: "%02X%02X%02X", want.0, want.1, want.2)) \
+            — something opaque is covering the page
+            """,
+            file: file, line: line
+        )
+    }
+
+    /// Control: the background on its own paints what the token says.
+    func testKkbBackgroundPaintsTheTokenWhenNothingCoversIt() {
+        assertGround(centrePixel(KkbBackground { Color.clear }, .dark), "KkbBackground alone")
+    }
+
+    /// The regression, and the shape `HomeView` actually uses.
+    ///
+    /// Without `kkbPageGround()` the centre of this renders #000000: the stack's
+    /// own `systemBackground` covers the ground that `KkbBackground` painted
+    /// underneath it. That is what shipped, and what made dark mode look black
+    /// however many times the palette was edited.
+    func testNavigationStackShellShowsThePageGround() {
+        let shell = KkbBackground {
+            NavigationStack {
+                VStack { Spacer(minLength: 0) }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .kkbPageGround()
+            }
+        }
+        assertGround(centrePixel(shell, .dark), "the HomeView shell")
+
+        // A background pinned to a container that does not fill the screen leaves
+        // black margins, which one centre sample would miss entirely.
+        let size = CGSize(width: 320, height: 640)
+        let probes = [
+            CGPoint(x: 4, y: 4), CGPoint(x: size.width - 4, y: 4),
+            CGPoint(x: 4, y: size.height - 4), CGPoint(x: size.width - 4, y: size.height - 4),
+            CGPoint(x: size.width / 2, y: 8), CGPoint(x: size.width / 2, y: size.height - 8),
+        ]
+        for (pixel, point) in zip(renderedPixels(shell, .dark, at: probes, size: size), probes) {
+            XCTAssertFalse(
+                pixel == (0, 0, 0),
+                "(\(Int(point.x)), \(Int(point.y))) is pure black — the ground does not reach the screen edge"
+            )
         }
     }
 
