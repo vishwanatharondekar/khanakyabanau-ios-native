@@ -1,0 +1,15 @@
+// Analytics build settings.
+//
+// The token is deliberately not committed — the web app keeps it in an env var and
+// Android in a gitignored `local.properties`, and this is the iOS equivalent. An
+// absent token is a supported state, not a broken one: `AnalyticsService` sees an
+// empty string and no-ops, exactly as Android's `NoOpAnalytics` does, so a fresh
+// clone builds and runs with analytics off.
+//
+// Precedence, lowest to highest:
+//   1. the empty default below
+//   2. Secrets.xcconfig, if present (gitignored; see README)
+//   3. `xcodebuild MIXPANEL_TOKEN=…` on the command line, for CI
+MIXPANEL_TOKEN =
+
+#include? "Secrets.xcconfig"

@@ -65,8 +65,11 @@ targets:
         SUPPORTS_MACCATALYST: "NO"
         DEVELOPMENT_ASSET_PATHS: ""
         OTHER_LDFLAGS: "$(inherited) -ObjC"
-        # Empty by default so debug builds never write to production funnels.
-        MIXPANEL_TOKEN: ""
+        # MIXPANEL_TOKEN is deliberately not set here: a target setting would
+        # override the xcconfig below. Release reads it from Analytics.xcconfig,
+        # which picks up the gitignored Secrets.xcconfig when one exists. Debug
+        # leaves it undefined — it expands to empty, so debug builds never write to
+        # production funnels.
         ANALYTICS_ENABLED: "YES"
         # Swap to App/KhanaKyaBanau-Push.entitlements once you have a paid
         # membership and a real GoogleService-Info.plist.
@@ -75,6 +78,16 @@ targets:
       configs:
         Debug:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DEBUG"
+          # Explicitly blank, and explicitly here rather than in the base settings:
+          # an exported MIXPANEL_TOKEN in the developer's shell (which is how the
+          # Android build picks it up) arrives as a build setting, so leaving this
+          # merely undefined would let a debug run write to the production funnel.
+          # A target setting outranks the environment; this is the only thing that
+          # actually keeps Debug quiet.
+          MIXPANEL_TOKEN: ""
+    configFiles:
+      # Release only: an archive gets the real token, a debug run does not.
+      Release: Analytics.xcconfig
 
   KhanaKyaBanauUITests:
     type: bundle.ui-testing

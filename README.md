@@ -182,7 +182,31 @@ divergence there is a product bug, not an implementation detail — the tests pi
 | Backend | `https://www.khanakyabanau.in` — hard-coded, same as Android |
 | Bundle ID | `in.khanakyabanau.app` |
 | Push | **Needs setup.** `Resources/GoogleService-Info.plist` is a placeholder; `PushService` detects it and skips Firebase entirely. See the comments in that file. |
-| Analytics | Mixpanel, off unless a `MixpanelToken` is present in `Info.plist`. Event names are `{category}_{action}`, shared with the other clients; the `device` super-property is `ios-app`. |
+| Analytics | Mixpanel, off unless a `MixpanelToken` is present in `Info.plist`. Event names are `{category}_{action}`, shared with the other clients; the `device` super-property is `ios-app`. See **Supplying the Mixpanel token** below. |
+
+### Supplying the Mixpanel token
+
+The token is never committed, matching the other two clients — the web app keeps it
+in an env var, Android in a gitignored `local.properties`.
+
+Create `Secrets.xcconfig` in the repo root (already gitignored):
+
+```
+MIXPANEL_TOKEN = <the project token>
+```
+
+`Analytics.xcconfig` includes it optionally and is wired to **Release only**, so an
+archive gets the token and a debug run does not. Without the file the token is
+empty, `AnalyticsService` no-ops, and everything still builds — a fresh clone needs
+no setup.
+
+Two things worth knowing:
+
+- Debug pins `MIXPANEL_TOKEN` to empty *explicitly*. An exported `MIXPANEL_TOKEN`
+  in your shell — which is how the Android build reads it — otherwise arrives as a
+  build setting and would point debug runs at the production funnel.
+- CI can pass `xcodebuild MIXPANEL_TOKEN=…`; a command-line setting outranks both
+  the xcconfig and the environment.
 
 ## Not built (deliberate)
 
