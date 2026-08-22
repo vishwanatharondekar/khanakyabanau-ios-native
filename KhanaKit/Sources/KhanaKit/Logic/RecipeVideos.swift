@@ -72,6 +72,13 @@ public enum RecipeVideos {
     /// A minimal page framing the embed player, to be loaded with [embedOrigin] as
     /// the base URL so the request carries a referer.
     ///
+    /// The page fills its web view rather than flowing inside it: `height:100%` on
+    /// a frame only resolves if every ancestor is sized too, and without that the
+    /// frame collapses to its intrinsic height and the player letterboxes into
+    /// whatever is left. Absolute positioning off a full-height page is the
+    /// standard responsive embed, and lets the 16:9 player meet the 16:9 card
+    /// exactly.
+    ///
     /// `playsinline=1` keeps playback inside the card on iPhone; without it the
     /// player goes fullscreen the moment it starts. Video ids come from
     /// [videoID(from:)], which only ever yields `[A-Za-z0-9_-]`, so there is
@@ -80,10 +87,17 @@ public enum RecipeVideos {
         """
         <!DOCTYPE html>
         <html>
-        <head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
-        <body style="margin:0;background:transparent">
+        <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1, \
+        maximum-scale=1, user-scalable=no">
+        <style>
+        html, body { margin:0; padding:0; height:100%; background:transparent; overflow:hidden; }
+        iframe { position:absolute; top:0; left:0; width:100%; height:100%; border:0; display:block; }
+        </style>
+        </head>
+        <body>
         <iframe src="\(embedURL(videoID: videoID))?playsinline=1"
-                width="100%" height="100%" frameborder="0" allowfullscreen
+                allowfullscreen
                 allow="accelerometer; encrypted-media; picture-in-picture"></iframe>
         </body>
         </html>
