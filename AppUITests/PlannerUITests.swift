@@ -91,8 +91,45 @@ final class PlannerUITests: XCTestCase {
         attach(app, "22-dish-after-reload")
     }
 
-    /// Tapping a filled slot opens the rename dialog rather than the suggestion
-    /// sheet, and saving an unchanged name must not clear the slot.
+    /// Tapping a filled meal card opens the recipe-video sheet, not the rename
+    /// dialog. The pencil is what edits now.
+    func testTappingAFilledSlotOpensTheVideoSheet() {
+        let app = weekApp()
+
+        let add = app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH[c] 'Add a breakfast'"))
+            .firstMatch
+        guard add.waitForExistence(timeout: networkTimeout) else {
+            XCTFail("No empty breakfast slot found")
+            return
+        }
+        add.tap()
+
+        let ownField = app.textFields["write your own…"]
+        XCTAssertTrue(ownField.waitForExistence(timeout: 20))
+        ownField.tap()
+        ownField.typeText("Thalipeeth")
+        app.buttons["Save this dish"].tap()
+
+        let dish = app.staticTexts["Thalipeeth"]
+        XCTAssertTrue(dish.waitForExistence(timeout: networkTimeout), "The dish never appeared")
+        dish.tap()
+
+        // "Paste URL" is one of the video sheet's two tabs and exists nowhere else.
+        XCTAssertTrue(
+            app.buttons["Paste URL"].waitForExistence(timeout: 20),
+            "Tapping the meal card did not open the recipe-video sheet"
+        )
+        XCTAssertFalse(
+            app.staticTexts["What's cooking?"].exists,
+            "The card still opens the rename dialog"
+        )
+        attach(app, "24-video-sheet-from-card")
+    }
+
+    /// Editing lives on the row's pencil — the card itself opens the video sheet,
+    /// which `testTappingAFilledSlotOpensTheVideoSheet` covers. Saving an unchanged
+    /// name must not clear the slot.
     func testEditingAFilledSlotKeepsTheDish() {
         let app = weekApp()
 

@@ -25,6 +25,32 @@ struct WeekView: View {
             }
     }
 
+    /// Opens the recipe-video sheet for a slot.
+    ///
+    /// Two affordances land here — tapping the meal card itself, and the row's
+    /// play button — so `trigger` records which one, since the funnel cannot tell
+    /// them apart from `source` alone.
+    private func openVideo(day: DayOfWeek, type: MealType, trigger: String) {
+        let meal = model.plan[day, type]
+        env.analytics.track(
+            AnalyticsEvents.Video.openModal,
+            category: AnalyticsEvents.Category.videoManagement,
+            parameters: [
+                AnalyticsProperties.mealName: meal.name,
+                AnalyticsProperties.source: "week",
+                AnalyticsProperties.trigger: trigger,
+            ]
+        )
+        onOpenVideo(RecipeVideoContext(
+            day: day,
+            mealType: type,
+            mealName: meal.name,
+            weekStartDate: model.weekStartDate,
+            slotVideoUrl: meal.videoUrl,
+            source: "week"
+        ))
+    }
+
     @ViewBuilder
     private func content(_ model: WeekViewModel) -> some View {
         @Bindable var model = model
@@ -65,27 +91,21 @@ struct WeekView: View {
                                 isResolvingImages: model.isResolvingImages,
                                 showCalories: model.showCalories,
                                 videoURL: { env.videos.url(for: $0) },
-                                onTapRow: { model.handleRowTap(day: entry.day, type: $0) },
+                                onTapRow: { type in
+                                    // An empty row has no dish to watch, so it
+                                    // keeps opening suggestions — the same thing
+                                    // its own `+` button does.
+                                    if model.plan[entry.day, type].isEmpty {
+                                        model.suggesting = SlotTarget(day: entry.day, type: type)
+                                    } else {
+                                        openVideo(day: entry.day, type: type, trigger: "meal_card")
+                                    }
+                                },
                                 onEdit: { model.editing = SlotTarget(day: entry.day, type: $0) },
                                 onSwap: { model.suggesting = SlotTarget(day: entry.day, type: $0) },
                                 onVideo: { type in
-                                    let meal = model.plan[entry.day, type]
-                                    env.analytics.track(
-                                        AnalyticsEvents.Video.openModal,
-                                        category: AnalyticsEvents.Category.videoManagement,
-                                        parameters: [
-                                            AnalyticsProperties.mealName: meal.name,
-                                            AnalyticsProperties.source: "week",
-                                        ]
-                                    )
-                                    onOpenVideo(RecipeVideoContext(
-                                        day: entry.day,
-                                        mealType: type,
-                                        mealName: meal.name,
-                                        weekStartDate: model.weekStartDate,
-                                        slotVideoUrl: meal.videoUrl,
-                                        source: "week"
-                                    ))
+                                    openVideo(day: entry.day, type: type,
+                                              trigger: "video_button")
                                 }
                             )
                         }

@@ -119,6 +119,9 @@ enum AnalyticsProperties {
     static let dayCount = "day_count"
     static let prunedCount = "pruned_count"
     static let videoURL = "video_url"
+    /// Which affordance opened something, when more than one leads to the same
+    /// place. `video_open_modal` carries "meal_card" or "video_button".
+    static let trigger = "trigger"
 }
 
 struct AnalyticsEvent {

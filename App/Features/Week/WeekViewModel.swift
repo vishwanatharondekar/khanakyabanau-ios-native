@@ -148,14 +148,6 @@ final class WeekViewModel {
 
     /// A tap on an empty slot opens suggestions; a filled slot opens the rename
     /// dialog. Replacing a filled slot is the explicit swap button.
-    func handleRowTap(day: DayOfWeek, type: MealType) {
-        if plan[day, type].isEmpty {
-            suggesting = SlotTarget(day: day, type: type)
-        } else {
-            editing = SlotTarget(day: day, type: type)
-        }
-    }
-
     func confirmEdit(target: SlotTarget, name: String, imageUrl: String? = nil) async {
         let previous = plan[target.day, target.type]
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
