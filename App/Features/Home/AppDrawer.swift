@@ -105,10 +105,8 @@ struct AppDrawer: View {
     private var identity: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
-                ZStack {
-                    Circle().fill(Kkb.terracottaSurface).frame(width: 44, height: 44)
-                    ChefHatIcon(size: 24, color: Kkb.terracotta600)
-                }
+                // No tinted circle behind it: the icon carries its own ground.
+                AppMarkIcon(size: 44)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("khana kya banau")
                         .kkbFont(.displaySmall)

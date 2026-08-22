@@ -255,43 +255,27 @@ struct MenuIconShape: Shape {
     }
 }
 
-/// Chef hat from lucide-react, the same mark the web app puts on its Get Started
-/// screen. Redrawn as a stroked `Path` so it inherits colour and scales cleanly.
-struct ChefHatShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        // Authored against lucide's 24×24 viewport, then scaled to `rect`.
-        let s = min(rect.width, rect.height) / 24
-        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-            CGPoint(x: rect.minX + x * s, y: rect.minY + y * s)
-        }
-
-        var path = Path()
-        // Toque: crown arcs over the head, sides drop to the brim.
-        path.move(to: p(7, 21))
-        path.addLine(to: p(7, 14.65))
-        path.addCurve(to: p(6.273, 13.609), control1: p(7, 14.193), control2: p(6.684, 13.806))
-        path.addCurve(to: p(8.407, 6.021), control1: p(3.2, 12.2), control2: p(4.5, 6.6))
-        path.addCurve(to: p(17.593, 6.021), control1: p(9.8, 2.4), control2: p(16.2, 2.4))
-        path.addCurve(to: p(19.727, 13.609), control1: p(21.5, 6.6), control2: p(22.8, 12.2))
-        path.addCurve(to: p(19, 14.65), control1: p(19.316, 13.806), control2: p(19, 14.193))
-        path.addLine(to: p(19, 21))
-        path.closeSubpath()
-        // Brim divider.
-        path.move(to: p(6, 17))
-        path.addLine(to: p(18, 17))
-        return path
-    }
-}
-
-struct ChefHatIcon: View {
-    var size: CGFloat = 40
-    var color: Color = Kkb.terracotta600
+/// The app icon, used in-app wherever the product needs to identify itself.
+///
+/// This draws a *copy* of the 1024 artwork rather than the `AppIcon` set: icon
+/// sets are compiled into the bundle's icon slots and are not reliably loadable
+/// as a runtime image, so an ordinary imageset is the supported way to show your
+/// own icon inside your app.
+///
+/// It replaced a stroked lucide chef hat, which is why there is no `color`
+/// parameter — this is fixed artwork and tints nothing.
+struct AppMarkIcon: View {
+    var size: CGFloat = 44
 
     var body: some View {
-        ChefHatShape()
-            .stroke(color, style: StrokeStyle(lineWidth: 2 * (size / 24),
-                                              lineCap: .round, lineJoin: .round))
+        Image("AppMark")
+            .resizable()
+            .interpolation(.high)
             .frame(width: size, height: size)
+            // The artwork is a full-bleed square; the home screen masks the
+            // squircle itself, so in-app it has to be masked here. 22.37% is the
+            // usual approximation of Apple's continuous-corner icon radius.
+            .clipShape(RoundedRectangle(cornerRadius: size * 0.2237, style: .continuous))
             .accessibilityHidden(true)
     }
 }

@@ -15,12 +15,7 @@ struct WelcomeView: View {
             Spacer()
 
             VStack(spacing: 18) {
-                ZStack {
-                    Circle()
-                        .fill(Kkb.terracottaSurface)
-                        .frame(width: 80, height: 80)
-                    ChefHatIcon(size: 40, color: Kkb.terracotta600)
-                }
+                AppMarkIcon(size: 80)
 
                 VStack(spacing: 8) {
                     Text("Khana Kya Banau")
