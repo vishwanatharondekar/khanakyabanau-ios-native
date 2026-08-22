@@ -24,9 +24,6 @@ struct SettingsSheet: View {
     /// Saving replaces the whole preferences object server-side, so a form that
     /// failed to load must not be presented as if it were the user's real settings.
     @State private var didLoad = false
-    #if DEBUG
-    @State private var testMessage: String?
-    #endif
 
     var body: some View {
         Group {
@@ -337,28 +334,6 @@ struct SettingsSheet: View {
                 default:
                     EmptyView()
                 }
-
-                #if DEBUG
-                // Not shipped: `#if DEBUG` compiles this out of Release. It exists
-                // because the honest way to check an evening reminder is otherwise
-                // to wait until evening.
-                VStack(alignment: .leading, spacing: 8) {
-                    Divider().overlay(Kkb.hairline)
-                    Text("Debug".eyebrow)
-                        .kkbFont(.sectionLabel)
-                        .foregroundStyle(Kkb.textSecondary)
-                    KkbSecondaryButton(title: "Send a test reminder now",
-                                       systemImage: "bell.badge") {
-                        Task { testMessage = await env.prepReminders.scheduleTestReminder() }
-                    }
-                    if let testMessage {
-                        Text(testMessage)
-                            .kkbFont(.bodySmall)
-                            .foregroundStyle(Kkb.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                #endif
             }
             .animation(.snappy(duration: 0.2), value: reminders.enabled)
             .animation(.snappy(duration: 0.2), value: reminders.afternoonEnabled)

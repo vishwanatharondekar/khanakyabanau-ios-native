@@ -170,6 +170,18 @@ final class PrepReminderScheduler {
     }
 
 #if DEBUG
+    /// UI tests pass `-KKBSendTestReminder` to have a real reminder delivered a few
+    /// seconds after launch, the way `-KKBResetState` clears stored state.
+    ///
+    /// This replaced a "Send a test reminder now" button in the prep-reminder
+    /// settings sheet. The button existed only to drive
+    /// `testTappingAPrepReminderOpensTomorrow`, and a debug control sitting in the
+    /// app's own settings screen is a worse home for that than a launch argument
+    /// no user can reach.
+    static var isTestReminderRequested: Bool {
+        ProcessInfo.processInfo.arguments.contains("-KKBSendTestReminder")
+    }
+
     /// Delivers the next real reminder a few seconds from now.
     ///
     /// The whole point of the feature is that it arrives hours later, which makes it

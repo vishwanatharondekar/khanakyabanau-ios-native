@@ -45,13 +45,18 @@ final class NotificationTapUITests: XCTestCase {
             systemAllow.tap()
         }
 
-        // Send one now rather than waiting for the evening.
-        let send = app.buttons["Send a test reminder now"]
-        XCTAssertTrue(send.waitForExistence(timeout: 15), "Debug send button missing")
-        send.tap()
+        // Send one now rather than waiting for the evening. The debug button that
+        // used to do this is gone; a relaunch under `-KKBSendTestReminder` schedules
+        // the same reminder once the session is back up. Permission belongs to the
+        // simulator and the guest session to the keychain, so both survive.
+        app.terminate()
+        app.launchArguments = ["-KKBSendTestReminder"]
+        app.launch()
+        XCTAssertTrue(
+            app.buttons["Today's Menu"].waitForExistence(timeout: networkTimeout),
+            "The relaunched app never reached Home, so no reminder was scheduled"
+        )
         attach(app, "01-test-reminder-sent")
-
-        app.buttons["Cancel"].tap()
 
         // Banners only present over SpringBoard, so get out of the app first.
         XCUIDevice.shared.press(.home)

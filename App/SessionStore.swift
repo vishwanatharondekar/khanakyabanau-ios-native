@@ -189,6 +189,14 @@ final class SessionStore {
         Task {
             await env.settings.loadPrepReminders()
             await env.prepReminders.reschedule()
+            #if DEBUG
+            // Fires only under `-KKBSendTestReminder`, and only in a debug build.
+            // Placed after `reschedule()` so the sweep it performs cannot cancel
+            // the test reminder before it is laid down.
+            if PrepReminderScheduler.isTestReminderRequested {
+                _ = await env.prepReminders.scheduleTestReminder()
+            }
+            #endif
         }
     }
 }
