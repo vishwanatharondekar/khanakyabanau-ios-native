@@ -198,7 +198,13 @@ final class PrepReminderScheduler {
     ///
     /// - Returns: what was scheduled, or why it wasn't, to show back to whoever
     ///   pressed the button.
-    func scheduleTestReminder(in seconds: TimeInterval = 8) async -> String {
+    /// - Parameter now: the day to plan from. Defaults to the real clock; tests pin
+    ///   it so the fixture week does not have to be the week the suite happens to
+    ///   run in. `reschedule(now:)` takes the same parameter for the same reason.
+    func scheduleTestReminder(
+        in seconds: TimeInterval = 8,
+        now: PlanDate = WeekDates.today()
+    ) async -> String {
         let status = await center.authorizationStatus()
         guard status == .authorized || status == .provisional else {
             return "Allow notifications first — nothing can be delivered yet."
@@ -208,7 +214,7 @@ final class PrepReminderScheduler {
         // `currentHour: 0` so tonight's reminder is still offered after its hour has
         // gone by. What is being tested here is delivery, not the schedule.
         let planned = await plannedReminders(
-            now: WeekDates.today(), hour: reminders.hour, currentHour: 0,
+            now: now, hour: reminders.hour, currentHour: 0,
             enabledTypes: enabledTypes
         )
 
@@ -232,7 +238,7 @@ final class PrepReminderScheduler {
             content.body = "Sample: Rajma: Soak rajma"
             content.userInfo = [
                 "type": "prep_reminder",
-                "targetDate": WeekDates.today().adding(days: 1).isoString,
+                "targetDate": now.adding(days: 1).isoString,
                 "lines": ["Soak rajma — Rajma"],
             ]
             outcome = "No prep in the next 7 days — sending a sample in \(Int(seconds))s."

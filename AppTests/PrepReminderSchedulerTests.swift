@@ -188,7 +188,7 @@ final class PrepReminderSchedulerTests: XCTestCase {
         let center = FakeNotificationCenter()
         let scheduler = makeScheduler(center: center, plans: weekWithOnePrepDay())
 
-        let outcome = await scheduler.scheduleTestReminder(in: 5)
+        let outcome = await scheduler.scheduleTestReminder(in: 5, now: today)
 
         let request = try XCTUnwrap(center.requests.first)
         XCTAssertEqual(request.content.body, "Rajma: Soak rajma")
@@ -202,7 +202,7 @@ final class PrepReminderSchedulerTests: XCTestCase {
         let center = FakeNotificationCenter()
         let scheduler = makeScheduler(center: center, plans: weekWithOnePrepDay())
 
-        _ = await scheduler.scheduleTestReminder(in: 5)
+        _ = await scheduler.scheduleTestReminder(in: 5, now: today)
         await scheduler.reschedule(now: today, currentHour: 9)
 
         XCTAssertTrue(
@@ -217,7 +217,7 @@ final class PrepReminderSchedulerTests: XCTestCase {
         let center = FakeNotificationCenter()
         let scheduler = makeScheduler(center: center, plans: [])
 
-        let outcome = await scheduler.scheduleTestReminder(in: 5)
+        let outcome = await scheduler.scheduleTestReminder(in: 5, now: today)
 
         let request = try XCTUnwrap(center.requests.first)
         XCTAssertTrue(request.content.body.hasPrefix("Sample:"), request.content.body)
