@@ -208,6 +208,31 @@ Two things worth knowing:
 - CI can pass `xcodebuild MIXPANEL_TOKEN=…`; a command-line setting outranks both
   the xcconfig and the environment.
 
+## Releasing
+
+`./release.sh` mirrors Android's script of the same name: it bumps the version,
+regenerates the project, archives Release, exports an App Store `.ipa`, then commits
+the bump and pushes.
+
+```
+./release.sh --keep-version     # hold 1.0.0, bump the build — what a first submission wants
+./release.sh                    # bump patch and build (1.0.0 -> 1.0.1)
+./release.sh --dry-run          # print the plan, change nothing
+./release.sh --help             # every flag
+```
+
+Output lands in `build/release/`. The script stops at the `.ipa`; upload it with
+Transporter or `xcrun altool --upload-app`.
+
+Two things it refuses to do quietly:
+
+- **Build without a Mixpanel token.** A release without one ships with analytics
+  disabled and nothing else fails, so this is a hard error. `--no-analytics` overrides.
+- **Pretend an export succeeded.** An App Store export needs an Apple Distribution
+  certificate; an "Apple Development" identity is not enough. If the export fails the
+  archive is kept, and you can distribute it from Xcode's Organizer instead —
+  which is also how you get that certificate the first time.
+
 ## Not built (deliberate)
 
 Dead code on Android, not resurrected here: the Amazon Fresh launcher (implemented but
