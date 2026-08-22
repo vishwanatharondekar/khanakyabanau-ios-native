@@ -17,7 +17,7 @@ struct HomeView: View {
     @State private var showingDrawer = false
     @State private var activeSettings: SettingsScreen?
     @State private var showingGuestUpgrade = false
-    @State private var showingDeleteAccount = false
+    @State private var showingAccount = false
     @State private var videoContext: RecipeVideoContext?
     @Namespace private var segmentNamespace
 
@@ -135,16 +135,17 @@ struct HomeView: View {
                     session.wantsSignIn = true
                     Task { await session.signOut() }
                 },
-                onSignOut: {
+                onOpenAccount: {
                     showingDrawer = false
-                    Task { await session.signOut() }
-                },
-                onDeleteAccount: {
-                    showingDrawer = false
-                    showingDeleteAccount = true
+                    showingAccount = true
                 }
             )
-            .presentationDetents([.medium, .large])
+            // Full height, not [.medium, .large]. The menu is ~570pt for a guest
+            // against ~437pt of medium detent, so the last row always sat below
+            // the fold — that is what cut "Delete account" off, not a missing
+            // safe-area inset. A menu that cannot show its own last item at its
+            // opening height is just broken.
+            .presentationDetents([.large])
         }
         .sheet(item: $activeSettings) { screen in
             SettingsSheet(screen: screen) { activeSettings = nil }
@@ -152,8 +153,8 @@ struct HomeView: View {
         .sheet(isPresented: $showingGuestUpgrade) {
             GuestUpgradeView { activeSettings = nil }
         }
-        .sheet(isPresented: $showingDeleteAccount) {
-            DeleteAccountView()
+        .sheet(isPresented: $showingAccount) {
+            AccountSheet()
         }
         .sheet(item: $videoContext) { context in
             RecipeVideoSheet(context: context) { videoContext = nil }

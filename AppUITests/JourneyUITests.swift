@@ -134,9 +134,19 @@ final class JourneyUITests: XCTestCase {
         app.buttons["Menu"].tap()
 
         XCTAssertTrue(app.buttons["Create account"].waitForExistence(timeout: 10))
-        XCTAssertFalse(app.buttons["Logout"].exists, "Guests must not see Logout")
         XCTAssertTrue(app.staticTexts["Guest"].exists)
         attach(app, "09-guest-drawer")
+
+        // Logout lives behind Account now, so the invariant has to be checked
+        // there. Asserting its absence from the drawer would pass whatever the
+        // guest rule did, because no user sees Logout in the drawer any more.
+        app.buttons["Account"].tap()
+        XCTAssertTrue(
+            app.buttons["Delete account"].waitForExistence(timeout: 10),
+            "Account sheet did not open"
+        )
+        XCTAssertFalse(app.buttons["Logout"].exists, "Guests must not see Logout")
+        attach(app, "10-guest-account")
     }
 
     /// Opening a planned meal from Today reaches the detail page.

@@ -32,10 +32,10 @@ struct AppDrawer: View {
     /// A guest who already has an account needs the sign-in form, not the
     /// create-an-account form — signing in is how they get back to their data.
     var onSignIn: () -> Void
-    var onSignOut: () -> Void
-    /// Shown to guests too: a guest account holds real server-side data, and a
-    /// reviewer trying the app without signing up must still be able to find this.
-    var onDeleteAccount: () -> Void
+    /// Logout and account deletion live behind this rather than in the drawer:
+    /// they are the only actions here that end or destroy the account, and keeping
+    /// them out also stops the drawer outgrowing its medium detent.
+    var onOpenAccount: () -> Void
 
     private var user: User? { session.user }
     private var isGuest: Bool { session.isGuest }
@@ -48,7 +48,7 @@ struct AppDrawer: View {
 
                     VStack(spacing: 2) {
                         if isGuest {
-                            DrawerRow(
+                            MenuRow(
                                 title: "Create account",
                                 systemImage: "person.crop.circle.badge.plus",
                                 tint: Kkb.terracotta600,
@@ -56,22 +56,22 @@ struct AppDrawer: View {
                                 action: onCreateAccount
                             )
                         }
-                        DrawerRow(
+                        MenuRow(
                             title: "Dietary preferences",
                             systemImage: "leaf",
                             tint: Kkb.sage600
                         ) { open(.dietary) }
-                        DrawerRow(
+                        MenuRow(
                             title: "Meal settings",
                             systemImage: "list.bullet.rectangle",
                             tint: Kkb.terracotta600
                         ) { open(.meals) }
-                        DrawerRow(
+                        MenuRow(
                             title: "Prep reminders",
                             systemImage: "bell.badge",
                             tint: Kkb.marigold600
                         ) { open(.prepReminder) }
-                        DrawerRow(
+                        MenuRow(
                             title: "Language",
                             systemImage: "character.bubble",
                             tint: Kkb.marigold600
@@ -81,26 +81,19 @@ struct AppDrawer: View {
                     Divider().overlay(Kkb.hairline)
 
                     if isGuest {
-                        DrawerRow(
+                        MenuRow(
                             title: "Already have an account? Sign In",
                             systemImage: "arrow.right.square",
                             tint: Kkb.terracotta600,
                             action: onSignIn
                         )
-                    } else {
-                        DrawerRow(
-                            title: "Logout",
-                            systemImage: "rectangle.portrait.and.arrow.right",
-                            tint: Kkb.terracotta600,
-                            action: onSignOut
-                        )
                     }
 
-                    DrawerRow(
-                        title: "Delete account",
-                        systemImage: "trash",
-                        tint: Kkb.terracotta700,
-                        action: onDeleteAccount
+                    MenuRow(
+                        title: "Account",
+                        systemImage: "person.crop.circle",
+                        tint: Kkb.terracotta600,
+                        action: onOpenAccount
                     )
                 }
                 .padding(20)
@@ -152,38 +145,5 @@ struct AppDrawer: View {
             parameters: [AnalyticsProperties.screen: screen.analyticsName]
         )
         onSelectSettings(screen)
-    }
-}
-
-private struct DrawerRow: View {
-    var title: String
-    var systemImage: String
-    var tint: Color
-    var isEmphasised: Bool = false
-    var action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 14) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 17))
-                    .foregroundStyle(tint)
-                    .frame(width: 24)
-                Text(title)
-                    .kkbFont(.bodyLarge)
-                    .fontWeight(isEmphasised ? .semibold : .regular)
-                    .foregroundStyle(isEmphasised ? tint : Kkb.textPrimary)
-                    .multilineTextAlignment(.leading)
-                Spacer()
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(isEmphasised ? Kkb.terracottaSurface.opacity(0.6) : .clear)
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 }
