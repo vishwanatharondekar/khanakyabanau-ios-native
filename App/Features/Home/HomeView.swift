@@ -220,9 +220,7 @@ struct HomeView: View {
 
             HStack {
                 Button { showingDrawer = true } label: {
-                    Image(systemName: "line.3.horizontal")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Kkb.ink700)
+                    MenuIcon()
                         .frame(width: 40, height: 40)
                         .contentShape(Rectangle())
                 }

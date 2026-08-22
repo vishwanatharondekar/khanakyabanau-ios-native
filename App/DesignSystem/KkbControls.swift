@@ -215,6 +215,46 @@ struct KkbTextField: View {
     }
 }
 
+/// The menu glyph from lucide-react, the icon set the web app draws everything
+/// with. SF Symbols' `line.3.horizontal` is a different family — thinner, squarer
+/// caps — and sat oddly next to the lucide chef hat two views away.
+///
+/// The web app has no drawer of its own, so there is no hamburger to copy from it
+/// directly; this is lucide's `Menu` at the version the web app pins (0.294.0),
+/// which is the icon it *would* use.
+struct MenuIcon: View {
+    var size: CGFloat = 22
+    /// Semantic, not a raw palette constant. `ink700` is a fixed warm brown, which
+    /// on the dark page ground came out at 1.25:1 — painted but not visible.
+    var color: Color = Kkb.textPrimary
+
+    var body: some View {
+        MenuIconShape()
+            .stroke(color, style: StrokeStyle(lineWidth: 2 * (size / 24),
+                                              lineCap: .round, lineJoin: .round))
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
+    }
+}
+
+/// lucide `Menu`: three lines from x=4 to x=20 at y=6, 12 and 18.
+struct MenuIconShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        // Authored against lucide's 24×24 viewport, then scaled to `rect`.
+        let s = min(rect.width, rect.height) / 24
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + x * s, y: rect.minY + y * s)
+        }
+
+        var path = Path()
+        for y in [6.0, 12.0, 18.0] as [CGFloat] {
+            path.move(to: p(4, y))
+            path.addLine(to: p(20, y))
+        }
+        return path
+    }
+}
+
 /// Chef hat from lucide-react, the same mark the web app puts on its Get Started
 /// screen. Redrawn as a stroked `Path` so it inherits colour and scales cleanly.
 struct ChefHatShape: Shape {

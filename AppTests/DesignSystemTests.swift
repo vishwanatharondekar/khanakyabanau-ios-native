@@ -102,6 +102,25 @@ final class DesignSystemTests: XCTestCase {
         }
     }
 
+    /// The menu button is drawn straight onto the page ground with no card or chip
+    /// behind it, so its tint has to clear the ground in both appearances on its
+    /// own. It was a fixed ink brown, which put it at roughly 1.3:1 against the
+    /// dark ground — technically painted, effectively invisible.
+    ///
+    /// 3.0 is WCAG's floor for a non-text UI component, which is what this is.
+    func testTheMenuButtonStaysVisibleOnThePageGround() {
+        let tint = MenuIcon().color
+
+        for (traits, appearance) in [(light, "light"), (dark, "dark")] {
+            let ratio = contrast(tint, on: Kkb.background, traits)
+            XCTAssertGreaterThan(
+                ratio, 3.0,
+                "the menu button has \(String(format: "%.2f", ratio)):1 against the "
+                + "page ground in \(appearance) mode"
+            )
+        }
+    }
+
     /// A tinted ground must sit *behind* its text, not in front of it: darker than
     /// the text in dark mode, lighter in light mode. This is the direction check the
     /// ratio alone can't make — 5:1 is 5:1 whichever way round the two are.
