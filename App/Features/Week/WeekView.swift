@@ -89,7 +89,6 @@ struct WeekView: View {
                                 isToday: model.todayIndex == index,
                                 isTomorrow: model.tomorrowIndex == index,
                                 isResolvingImages: model.isResolvingImages,
-                                showCalories: model.showCalories,
                                 videoURL: { env.videos.url(for: $0) },
                                 onTapRow: { type in
                                     // An empty row has no dish to watch, so it

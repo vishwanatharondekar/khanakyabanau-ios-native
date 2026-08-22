@@ -57,7 +57,6 @@ final class WeekViewModel {
 
     var weekRangeLabel: String { WeekDates.rangeLabel(weekStartDate: weekStartDate) }
     var enabledTypes: [MealType] { env.settings.enabledTypes }
-    var showCalories: Bool { env.settings.showCalories }
 
     var todayIndex: Int? { WeekDates.todayIndex(in: weekStartDate) }
     var tomorrowIndex: Int? { WeekDates.tomorrowIndex(in: weekStartDate) }

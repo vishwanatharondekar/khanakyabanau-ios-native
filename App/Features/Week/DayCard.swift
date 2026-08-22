@@ -11,7 +11,6 @@ struct DayCard: View {
     var isToday: Bool
     var isTomorrow: Bool
     var isResolvingImages: Bool
-    var showCalories: Bool
     var videoURL: (Meal) -> String?
     var onTapRow: (MealType) -> Void
     var onEdit: (MealType) -> Void
@@ -63,7 +62,6 @@ struct DayCard: View {
                         type: type,
                         meal: meals[type],
                         isResolvingImages: isResolvingImages,
-                        showCalories: showCalories,
                         videoURL: videoURL(meals[type]),
                         onTap: { onTapRow(type) },
                         onEdit: { onEdit(type) },
@@ -106,7 +104,6 @@ struct MealRow: View {
     var type: MealType
     var meal: Meal
     var isResolvingImages: Bool
-    var showCalories: Bool
     var videoURL: String?
     var onTap: () -> Void
     var onEdit: () -> Void
@@ -116,7 +113,10 @@ struct MealRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Button(action: onTap) {
-                HStack(spacing: 12) {
+                // Top, not centre: a two- or three-line dish name should grow
+                // downwards from the thumbnail's top edge rather than push the
+                // eyebrow up away from it.
+                HStack(alignment: .top, spacing: 12) {
                     MealThumbnail(
                         imageUrl: meal.imageUrl,
                         size: 88,
@@ -143,9 +143,6 @@ struct MealRow: View {
                         }
 
                         HStack(spacing: 6) {
-                            if showCalories, let calories = meal.calories {
-                                CalorieBadge(calories: calories)
-                            }
                             if let prep = meal.validPrep, prep.maxLeadTimeMinutes > 0 {
                                 PrepAheadBadge(leadTimeMinutes: prep.maxLeadTimeMinutes)
                             }
