@@ -59,6 +59,37 @@ public enum RecipeVideos {
         "https://www.youtube.com/embed/\(videoID)"
     }
 
+    /// The origin the inline player is framed from.
+    ///
+    /// YouTube will not play an embed that arrives with no referer — it answers
+    /// with "Error 153 / Video player configuration error" instead of a player.
+    /// Pointing a web view straight at [embedURL] sends no referer at all, so the
+    /// player has to be framed from a page belonging to a site that legitimately
+    /// embeds these videos. That is this one: the web app's picker has always
+    /// embedded them from here, which is why it never saw the error.
+    public static let embedOrigin = "https://www.khanakyabanau.in"
+
+    /// A minimal page framing the embed player, to be loaded with [embedOrigin] as
+    /// the base URL so the request carries a referer.
+    ///
+    /// `playsinline=1` keeps playback inside the card on iPhone; without it the
+    /// player goes fullscreen the moment it starts. Video ids come from
+    /// [videoID(from:)], which only ever yields `[A-Za-z0-9_-]`, so there is
+    /// nothing here to escape.
+    public static func embedHTML(videoID: String) -> String {
+        """
+        <!DOCTYPE html>
+        <html>
+        <head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+        <body style="margin:0;background:transparent">
+        <iframe src="\(embedURL(videoID: videoID))?playsinline=1"
+                width="100%" height="100%" frameborder="0" allowfullscreen
+                allow="accelerometer; encrypted-media; picture-in-picture"></iframe>
+        </body>
+        </html>
+        """
+    }
+
     public static func thumbnailURL(videoID: String) -> String {
         "https://img.youtube.com/vi/\(videoID)/mqdefault.jpg"
     }

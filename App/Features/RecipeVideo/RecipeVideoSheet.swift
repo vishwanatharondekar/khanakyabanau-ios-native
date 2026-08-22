@@ -398,6 +398,11 @@ struct RecipeVideoSheet: View {
 
 /// An inline YouTube player. `WKWebView` is the only way to embed YouTube on iOS,
 /// and it stays scoped to a single expanded card at a time.
+///
+/// The player is framed from a page of our own origin rather than navigated to
+/// directly: a bare navigation to `youtube.com/embed/…` carries no referer, and
+/// YouTube answers that with "Error 153 / Video player configuration error"
+/// instead of a video. See `RecipeVideos.embedOrigin`.
 struct YouTubePreview: UIViewRepresentable {
     var videoID: String
 
@@ -413,8 +418,20 @@ struct YouTubePreview: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        guard let url = URL(string: RecipeVideos.embedURL(videoID: videoID)),
-              webView.url != url else { return }
-        webView.load(URLRequest(url: url))
+        // Track what was asked for rather than comparing `webView.url`: the loaded
+        // page is now the base origin, and the player rewrites its own URL while
+        // running, so neither reads back as "this video is already showing".
+        guard context.coordinator.loadedVideoID != videoID else { return }
+        context.coordinator.loadedVideoID = videoID
+        webView.loadHTMLString(
+            RecipeVideos.embedHTML(videoID: videoID),
+            baseURL: URL(string: RecipeVideos.embedOrigin)
+        )
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator {
+        var loadedVideoID: String?
     }
 }

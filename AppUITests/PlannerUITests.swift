@@ -127,6 +127,56 @@ final class PlannerUITests: XCTestCase {
         attach(app, "24-video-sheet-from-card")
     }
 
+    /// Expanding a search result has to show a player, not YouTube's refusal.
+    ///
+    /// A bare navigation to `youtube.com/embed/…` sends no referer and YouTube
+    /// answers with "Error 153 / Video player configuration error". Nothing local
+    /// can catch that — the embed page only refuses when it is really fetched —
+    /// so this drives the actual player.
+    func testExpandingASearchResultPlaysRatherThanErroring() {
+        let app = weekApp()
+
+        let add = app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH[c] 'Add a breakfast'"))
+            .firstMatch
+        guard add.waitForExistence(timeout: networkTimeout) else {
+            XCTFail("No empty breakfast slot found")
+            return
+        }
+        add.tap()
+
+        let ownField = app.textFields["write your own…"]
+        XCTAssertTrue(ownField.waitForExistence(timeout: 20))
+        ownField.tap()
+        ownField.typeText("Poha")
+        app.buttons["Save this dish"].tap()
+
+        let dish = app.staticTexts["Poha"]
+        XCTAssertTrue(dish.waitForExistence(timeout: networkTimeout), "The dish never appeared")
+        dish.tap()
+
+        let preview = app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH 'Preview'"))
+            .firstMatch
+        guard preview.waitForExistence(timeout: networkTimeout) else {
+            XCTFail("The video search returned no results to expand")
+            return
+        }
+        preview.tap()
+
+        // Absence, confirmed over time rather than sampled once: the player takes
+        // a moment to decide, and the refusal renders inside the web view.
+        let refusal = app.staticTexts
+            .containing(NSPredicate(format:
+                "label CONTAINS[c] 'configuration error' OR label CONTAINS '153'"))
+            .firstMatch
+        XCTAssertFalse(
+            refusal.waitForExistence(timeout: 15),
+            "YouTube refused the embed — the player is being loaded without a referer again"
+        )
+        attach(app, "27-video-preview")
+    }
+
     /// Editing lives on the row's pencil — the card itself opens the video sheet,
     /// which `testTappingAFilledSlotOpensTheVideoSheet` covers. Saving an unchanged
     /// name must not clear the slot.
