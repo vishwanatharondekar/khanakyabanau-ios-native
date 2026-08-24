@@ -312,7 +312,7 @@ struct MealDetailView: View {
         pasteError = nil
         isSavingPaste = true
         do {
-            try await env.videos.save(recipeName: meal.name, videoUrl: trimmed)
+            try await env.videos.saveForMeal(mealName: meal.name, videoUrl: trimmed)
             env.analytics.track(
                 AnalyticsEvents.Video.addURL,
                 category: AnalyticsEvents.Category.videoManagement,

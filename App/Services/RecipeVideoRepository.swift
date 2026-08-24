@@ -10,6 +10,7 @@ import KhanaKit
 @Observable
 final class RecipeVideoRepository {
     private let api: APIClient
+    private let ai: AiRepository
 
     /// `nil` means "never loaded", which is different from "loaded and empty".
     private(set) var videoURLs: [String: String]?
@@ -20,8 +21,9 @@ final class RecipeVideoRepository {
     /// within a session must not hit the network again.
     private var searchCache: [String: RecipeVideoSearchPage] = [:]
 
-    init(api: APIClient) {
+    init(api: APIClient, ai: AiRepository) {
         self.api = api
+        self.ai = ai
     }
 
     func url(for meal: Meal) -> String? {
@@ -32,8 +34,7 @@ final class RecipeVideoRepository {
     /// to the server having cached a top pick against the slot. Only the former
     /// earns the "🎥 RECIPE VIDEO" stamp.
     func hasSavedPick(for mealName: String) -> Bool {
-        guard let saved = videoURLs?[RecipeVideos.normalizeKey(mealName)] else { return false }
-        return !saved.isEmpty
+        RecipeVideoKeys.matchSavedVideo(mealName: mealName, videoURLs: videoURLs) != nil
     }
 
     func ensureLoaded() async {
@@ -65,6 +66,19 @@ final class RecipeVideoRepository {
         } catch {
             // Leave it nil so the next screen that needs it tries again.
         }
+    }
+
+    /// Saves the user's pick for the dish inside `mealName` rather than for the whole
+    /// plate: a meal written as "Gujarati dal, steamed rice, bhindi nu shaak and
+    /// phulka" files the video under "Gujarati dal", which resolves again for any meal
+    /// naming that dish (`RecipeVideoKeys.matchSavedVideos`). Every save goes through
+    /// here so no caller can key one on the full line.
+    ///
+    /// A meal name that can't be narrowed is saved as it stands, which is what every
+    /// save did before.
+    func saveForMeal(mealName: String, videoUrl: String) async throws {
+        let dish = await ai.mainDish(for: mealName) ?? mealName
+        try await save(recipeName: dish, videoUrl: videoUrl)
     }
 
     /// Saves a pick. The server echoes the whole map back, which we adopt wholesale

@@ -252,6 +252,38 @@ public struct CorpusSuggestionsResponse: Decodable, Sendable {
 
 // MARK: - Video
 
+public struct MainDishRequest: Encodable, Sendable {
+    public var mealName: String
+    public init(mealName: String) {
+        self.mealName = mealName
+    }
+}
+
+/// `mainDish` is always a slice of the meal name that was asked about, which is what
+/// makes it safe to store a video under. `identified` is false when the route
+/// declined to narrow the name — too short, or the model's answer was not a run of
+/// whole words in it — and `mainDish` is then the name as sent.
+public struct MainDishResponse: Decodable, Sendable {
+    public var mainDish: String?
+    public var identified: Bool
+
+    public init(mainDish: String?, identified: Bool) {
+        self.mainDish = mainDish
+        self.identified = identified
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        mainDish = try container.decodeIfPresent(String.self, forKey: .mainDish)
+        identified = try container.decodeIfPresent(Bool.self, forKey: .identified) ?? false
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case mainDish
+        case identified
+    }
+}
+
 public struct SaveVideoURLRequest: Encodable, Sendable {
     public var recipeName: String
     /// Empty removes the saved pick for this dish.

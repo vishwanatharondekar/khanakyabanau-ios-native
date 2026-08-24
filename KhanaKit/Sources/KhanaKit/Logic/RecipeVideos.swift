@@ -8,7 +8,7 @@ public enum RecipeVideos {
     /// write (`api/auth/video-urls` lowercases and trims), so lookups done here
     /// match entries saved from any client.
     public static func normalizeKey(_ dishName: String) -> String {
-        dishName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        RecipeVideoKeys.storageKey(dishName)
     }
 
     /// The video for a meal: the user's dish-keyed pick wins (it's a deliberate
@@ -16,7 +16,11 @@ public enum RecipeVideos {
     /// page cached against this slot. Single source of the priority rule — chips,
     /// stamps, detail page and the PDF all resolve through here.
     public static func url(in videoUrls: [String: String]?, for meal: Meal) -> String? {
-        if let saved = videoUrls?[normalizeKey(meal.name)], !saved.isEmpty { return saved }
+        // Resolved by dish, so a pick saved for one of a plate's dishes counts for
+        // the whole line — see RecipeVideoKeys.matchSavedVideos.
+        if let saved = RecipeVideoKeys.matchSavedVideo(mealName: meal.name, videoURLs: videoUrls) {
+            return saved
+        }
         if let slot = meal.videoUrl, !slot.isEmpty { return slot }
         return nil
     }

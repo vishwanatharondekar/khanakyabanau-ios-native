@@ -28,10 +28,10 @@ struct RecipeVideoSheet: View {
     @State private var toast: String?
     @Namespace private var segmentNamespace
 
+    /// The user's own saved pick for this meal, resolved by dish — a video filed
+    /// under one of a plate's dishes is still their pick for the plate.
     private var savedURL: String? {
-        env.videos.hasSavedPick(for: context.mealName)
-            ? env.videos.videoURLs?[RecipeVideos.normalizeKey(context.mealName)]
-            : nil
+        RecipeVideoKeys.matchSavedVideo(mealName: context.mealName, videoURLs: env.videos.videoURLs)
     }
 
     var body: some View {
@@ -374,7 +374,7 @@ struct RecipeVideoSheet: View {
     private func save(url: String, source: String) async {
         isSaving = true
         do {
-            try await env.videos.save(recipeName: context.mealName, videoUrl: url)
+            try await env.videos.saveForMeal(mealName: context.mealName, videoUrl: url)
             env.analytics.track(
                 AnalyticsEvents.Video.addURL,
                 category: AnalyticsEvents.Category.videoManagement,

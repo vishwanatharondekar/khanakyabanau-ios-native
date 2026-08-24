@@ -33,7 +33,7 @@ final class AppEnvironment {
         self.auth = AuthRepository(api: api, tokenStore: tokenStore)
         self.meals = MealRepository(api: api)
         self.ai = AiRepository(api: api)
-        self.videos = RecipeVideoRepository(api: api)
+        self.videos = RecipeVideoRepository(api: api, ai: self.ai)
         self.translations = TranslationRepository(api: api)
         self.push = PushService(api: api)
 

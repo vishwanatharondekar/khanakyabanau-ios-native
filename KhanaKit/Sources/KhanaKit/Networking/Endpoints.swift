@@ -134,6 +134,13 @@ public enum Endpoints {
                  body: Endpoint.json(body), profile: .ai)
     }
 
+    /// Names the one dish in a multi-dish meal name ("Gujarati dal, steamed rice,
+    /// bhindi nu shaak and phulka") that a recipe video should be about, so the video
+    /// is filed under the dish rather than the whole plate.
+    public static func mainDish(_ body: MainDishRequest) -> Endpoint {
+        Endpoint(method: .post, path: "api/ai/main-dish", body: Endpoint.json(body), profile: .ai)
+    }
+
     public static func corpusSuggestions(_ body: CorpusSuggestionsRequest) -> Endpoint {
         Endpoint(method: .post, path: "api/suggestions/from-corpus",
                  body: Endpoint.json(body), profile: .ai)
