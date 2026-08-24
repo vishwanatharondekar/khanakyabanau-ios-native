@@ -26,19 +26,41 @@ struct RecipeVideoSheet: View {
     @State private var pasteError: String?
     @State private var isSaving = false
     @State private var toast: String?
+    /// A main-dish lookup is in flight; the search waits for it rather than
+    /// spending a query on the whole plate.
+    @State private var isIdentifying = false
+    /// The chip the user tapped, if it is still among the matches.
+    @State private var selectedSavedKey: String?
+    @State private var isRemoving = false
     @Namespace private var segmentNamespace
+
+    /// Every saved pick whose dish this meal names, most specific first. A plate
+    /// can name several dishes the user has saved videos for, which is why this is
+    /// a list and the hero is one of a set.
+    private var savedMatches: [SavedVideoMatch] {
+        RecipeVideoKeys.matchSavedVideos(mealName: context.mealName, videoURLs: env.videos.videoURLs)
+    }
+
+    /// The match on show: the chip the user tapped as long as it survived a
+    /// removal, otherwise the most specific one.
+    private var selectedMatch: SavedVideoMatch? {
+        if let selectedSavedKey,
+           let match = savedMatches.first(where: { $0.key == selectedSavedKey }) {
+            return match
+        }
+        return savedMatches.first
+    }
 
     /// The user's own saved pick for this meal, resolved by dish — a video filed
     /// under one of a plate's dishes is still their pick for the plate.
-    private var savedURL: String? {
-        RecipeVideoKeys.matchSavedVideo(mealName: context.mealName, videoURLs: env.videos.videoURLs)
-    }
+    private var savedURL: String? { selectedMatch?.url }
 
     var body: some View {
         KkbBackground {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     header
+                    savedMatchChips
                     hero
 
                     SegmentedTabs(
@@ -60,10 +82,24 @@ struct RecipeVideoSheet: View {
         .kkbToast($toast)
         .task {
             await env.videos.ensureLoaded()
-            if query.isEmpty {
+            guard query.isEmpty else { return }
+
+            // Narrowed before anything is searched for: this sheet's first search
+            // is what the user judges the feature by, and "Gujarati dal, steamed
+            // rice, bhindi nu shaak and phulka" returns thali compilations rather
+            // than a dal recipe. Short names are already a dish, and a lookup that
+            // finds nothing to narrow falls back to the name as written.
+            if RecipeVideoKeys.needsMainDishLookup(context.mealName) {
+                isIdentifying = true
+                let dish = await env.ai.mainDish(for: context.mealName)
+                isIdentifying = false
+                // The user may have started typing while the lookup was in
+                // flight; their query wins.
+                if query.isEmpty { query = dish ?? context.mealName }
+            } else {
                 query = context.mealName
-                await runSearch(reset: true)
             }
+            await runSearch(reset: true)
         }
         .onDisappear { onDismiss() }
     }
@@ -81,16 +117,83 @@ struct RecipeVideoSheet: View {
         }
     }
 
+    /// One chip per dish of this meal that already has a saved video. Tapping one
+    /// moves the hero, the way the web app modal's chips do. Three at most: past
+    /// that the row costs more room than the choice is worth.
+    @ViewBuilder
+    private var savedMatchChips: some View {
+        if savedMatches.count > 1 {
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(savedMatches.prefix(3), id: \.key) { match in
+                        let isSelected = match.key == selectedMatch?.key
+                        Button {
+                            selectedSavedKey = match.key
+                        } label: {
+                            Text(match.key)
+                                .kkbFont(.labelLarge)
+                                .lineLimit(1)
+                                .foregroundStyle(isSelected ? Kkb.sageText : Kkb.textSecondary)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(
+                                    Capsule().fill(isSelected ? Kkb.sageSurface : Kkb.surfaceSunken)
+                                )
+                                .overlay(
+                                    Capsule().strokeBorder(
+                                        isSelected ? Kkb.sageText.opacity(0.35) : Kkb.hairline,
+                                        lineWidth: 1
+                                    )
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .scrollIndicators(.hidden)
+        }
+    }
+
+    /// Drops the pick on show, by the key it is filed under — a dish, which is not
+    /// necessarily this meal's name. Naming it is the point: without that, Remove
+    /// would be removing something the user cannot see.
+    @ViewBuilder
+    private var removeSavedRow: some View {
+        if let match = selectedMatch {
+            HStack(spacing: 10) {
+                Text("SAVED · \(match.key)".uppercased())
+                    .kkbFont(.sectionLabel)
+                    .tracking(2)
+                    .foregroundStyle(Kkb.textSecondary)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Button {
+                    Task { await removeSelected(match) }
+                } label: {
+                    Text(isRemoving ? "Removing…" : "Remove")
+                        .kkbFont(.labelLarge)
+                        .underline()
+                        .foregroundStyle(Kkb.terracotta500)
+                }
+                .buttonStyle(.plain)
+                .disabled(isRemoving)
+            }
+        }
+    }
+
     @ViewBuilder
     private var hero: some View {
         if let savedURL {
-            heroCard(
-                tag: "YOUR SAVED RECIPE",
-                tagTint: Kkb.sageText,
-                tagFill: Kkb.sageSurface,
-                url: savedURL,
-                caption: "Replace it by saving another result or pasting a new link."
-            )
+            VStack(alignment: .leading, spacing: 10) {
+                heroCard(
+                    tag: "YOUR SAVED RECIPE",
+                    tagTint: Kkb.sageText,
+                    tagFill: Kkb.sageSurface,
+                    url: savedURL,
+                    caption: "Replace it by saving another result or pasting a new link."
+                )
+                removeSavedRow
+            }
         } else if let slot = context.slotVideoUrl, !slot.isEmpty {
             heroCard(
                 tag: "TOP PICK",
@@ -184,7 +287,7 @@ struct RecipeVideoSheet: View {
                 .accessibilityLabel("Search")
             }
 
-            if isSearching, results.isEmpty {
+            if isIdentifying || (isSearching && results.isEmpty) {
                 ProgressView().tint(Kkb.terracotta500)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 30)
@@ -200,7 +303,7 @@ struct RecipeVideoSheet: View {
                 )
                 .padding(.vertical, 20)
             } else {
-                ForEach(results) { result in
+                ForEach(results.filter { !savedVideoIDs.contains($0.id) }) { result in
                     resultCard(result)
                 }
 
@@ -346,6 +449,27 @@ struct RecipeVideoSheet: View {
     }
 
     // MARK: - Actions
+
+    /// Video ids this meal already has saved, hero included, so the results list
+    /// doesn't offer to save something that is already saved.
+    private var savedVideoIDs: Set<String> {
+        Set(savedMatches.compactMap { RecipeVideos.videoID(from: $0.url) })
+    }
+
+    /// Drops one saved pick by the key it is filed under, not by the meal name.
+    /// The repository re-publishes the map, so the hero falls to the next match
+    /// on its own.
+    private func removeSelected(_ match: SavedVideoMatch) async {
+        isRemoving = true
+        do {
+            try await env.videos.clear(recipeName: match.key)
+            selectedSavedKey = nil
+            toast = "Removed"
+        } catch {
+            toast = "Failed to remove the video"
+        }
+        isRemoving = false
+    }
 
     private func runSearch(reset: Bool) async {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
