@@ -20,6 +20,7 @@ final class AppEnvironment {
     let translations: TranslationRepository
     let push: PushService
     let prepReminders: PrepReminderScheduler
+    let firstWeek: FirstWeekSeeder
 
     init() {
         let tokenStore = TokenStore()
@@ -39,7 +40,11 @@ final class AppEnvironment {
 
         let settings = SettingsRepository(api: api)
         self.settings = settings
-        self.prepReminders = PrepReminderScheduler(meals: self.meals, settings: settings)
+        let prepReminders = PrepReminderScheduler(meals: self.meals, settings: settings)
+        self.prepReminders = prepReminders
+        self.firstWeek = FirstWeekSeeder(
+            ai: self.ai, meals: self.meals, prepReminders: prepReminders
+        )
     }
 }
 

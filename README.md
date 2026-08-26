@@ -23,10 +23,10 @@ xcodebuild -scheme KhanaKyaBanau \
 cd KhanaKit && swift test     # pure-logic suite, no iOS SDK required
 ```
 
-**177 tests, all green:** 139 in `KhanaKit` (codec, week maths, shopping scope,
-prep rules, API parsing), 27 app unit tests (PDF rendering incl. Indic scripts,
-palette/appearance, shopping-list state, auth routing) and 11 UI journeys driven
-against the **production** backend.
+**298 tests, all green:** 225 in `KhanaKit` (codec, week maths, shopping scope,
+prep rules, API parsing), 59 app unit tests (PDF rendering incl. Indic scripts,
+palette/appearance, shopping-list state, auth routing, prep reminders, first-week
+seeding) and 14 UI journeys driven against the **production** backend.
 
 Two notes on the UI tests: they create real guest accounts and consume a guest's
 three lifetime AI/shopping allowances, so don't loop them needlessly; and
@@ -166,6 +166,15 @@ from the bundled Noto face.
 - **There is no `DELETE /api/meals/{week}`** — clearing a week is a PUT of the empty grid.
 - **Guest quotas are lifetime, not daily**: 3 AI generations, 3 shopping lists.
   There is no paywall or subscription anywhere in this product.
+- **The first week is generated during onboarding, and reads before it writes.**
+  `FirstWeekSeeder` runs as phase 2 of `OnboardingView.finish()`, like Android's
+  `OnboardingViewModel.complete()`. It diverges from Android in one way that
+  matters: Android PUTs the AI grid without reading the week first, so a blip
+  during onboarding can overwrite an existing plan. Here a week that already has
+  meals — or one that could not be read — is never generated over, which is also
+  what the web client does (`MealPlanner.tsx:246-280`, `:480`). Generation failure
+  is silent by design; the user lands on Home and the Week tab's AI button is the
+  retry. `FirstWeekSeederTests` guards both refusals.
 - **Shopping-list scoping is client-side.** The server returns one full-week list;
   `ShoppingScope` recomposes it, so narrowing the day range costs nothing.
 - **Week keys are the Monday, ISO `yyyy-MM-dd`, in device-local time.** `PlanDate` is
