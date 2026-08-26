@@ -211,20 +211,51 @@ Two things worth knowing:
 ## Releasing
 
 `./release.sh` mirrors Android's script of the same name: it bumps the version,
-regenerates the project, archives Release, exports an App Store `.ipa`, then commits
-the bump and pushes.
+regenerates the project, archives Release, exports an App Store `.ipa`, uploads it to
+TestFlight, then commits the bump and pushes.
 
 ```
-./release.sh --keep-version     # hold 1.0.0, bump the build — what a first submission wants
+./release.sh --keep-version     # hold the version, bump the build
 ./release.sh                    # bump patch and build (1.0.0 -> 1.0.1)
+./release.sh --no-upload        # stop at the .ipa, don't upload
 ./release.sh --dry-run          # print the plan, change nothing
 ./release.sh --help             # every flag
 ```
 
-Output lands in `build/release/`. The script stops at the `.ipa`; upload it with
-Transporter or `xcrun altool --upload-app`.
+Output lands in `build/release/`.
 
-Two things it refuses to do quietly:
+### TestFlight credentials
+
+The upload uses `xcrun altool`, which needs App Store Connect credentials in the
+environment. An API key is preferred — it survives a password change and is scoped
+to App Store Connect:
+
+```sh
+export ASC_KEY_ID=ABC123DEFG
+export ASC_ISSUER_ID=<issuer-uuid>
+# with AuthKey_ABC123DEFG.p8 in ~/.appstoreconnect/private_keys
+```
+
+Create the key under App Store Connect → Users and Access → Integrations, with the
+App Manager role. An Apple ID with an [app-specific
+password](https://appleid.apple.com) works too:
+
+```sh
+export ASC_APPLE_ID=you@example.com
+export ASC_APP_PASSWORD=abcd-efgh-ijkl-mnop   # or @keychain:<name>
+```
+
+Neither secret is printed or passed as a literal argument — the password reaches
+altool through its own `@env:` indirection, so it stays out of `ps` output.
+Credentials are resolved *before* the archive, so a missing one costs a second
+rather than a five-minute build, and `--dry-run` doubles as a preflight check for
+them.
+
+Uploading is the one irreversible step: a build number is spent the moment the
+upload is accepted, whether or not that build is ever released. If a build number
+is already taken, rerun with `--build=N` rather than retrying.
+
+Three things it refuses to do quietly:
 
 - **Build without a Mixpanel token.** A release without one ships with analytics
   disabled and nothing else fails, so this is a hard error. `--no-analytics` overrides.
@@ -232,6 +263,8 @@ Two things it refuses to do quietly:
   certificate; an "Apple Development" identity is not enough. If the export fails the
   archive is kept, and you can distribute it from Xcode's Organizer instead —
   which is also how you get that certificate the first time.
+- **Silently skip the upload.** Missing credentials fail the run up front. Pass
+  `--no-upload` if you actually want to stop at the `.ipa`.
 
 ## Not built (deliberate)
 

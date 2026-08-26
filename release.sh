@@ -3,8 +3,9 @@
 # release.sh — local release pipeline for the Khana Kya Banau iOS app.
 #
 # Bumps MARKETING_VERSION and CURRENT_PROJECT_VERSION in project.yml, regenerates
-# the Xcode project, archives Release and exports an App Store .ipa, then commits
-# the version bump and pushes it to the current branch's remote.
+# the Xcode project, archives Release, exports an App Store .ipa, uploads it to
+# TestFlight, then commits the version bump and pushes it to the current branch's
+# remote.
 #
 # With no version flags, CURRENT_PROJECT_VERSION increments by one and
 # MARKETING_VERSION gets its patch component bumped (1.0.0 -> 1.0.1).
@@ -19,6 +20,7 @@
 #   ./release.sh --no-build               # bump versions only, don't archive
 #   ./release.sh --no-analytics           # allow a build with no Mixpanel token
 #   ./release.sh --dry-run                # show what would change, don't write or build
+#   ./release.sh --no-upload              # build and export, don't upload
 #   ./release.sh --no-git                 # skip the git commit + push
 #   ./release.sh --help
 #
@@ -48,6 +50,27 @@
 #   Nothing else fails, so this script refuses to build without one. Supply it in
 #   Secrets.xcconfig (see README) or export MIXPANEL_TOKEN. Pass --no-analytics to
 #   build anyway.
+#
+# TestFlight:
+#   Every exported .ipa is uploaded to App Store Connect with `xcrun altool`, which
+#   is the same path Transporter takes. Credentials come from the environment, in
+#   this order:
+#
+#     1. An API key — ASC_KEY_ID and ASC_ISSUER_ID, with the matching
+#        AuthKey_<key-id>.p8 in ~/.appstoreconnect/private_keys (override the
+#        directory with ASC_KEY_DIR). Create the key under App Store Connect >
+#        Users and Access > Integrations, with the App Manager role.
+#     2. An Apple ID — ASC_APPLE_ID and ASC_APP_PASSWORD, where the password is an
+#        app-specific password from appleid.apple.com, not your Apple ID password.
+#        ASC_APP_PASSWORD also accepts altool's own @keychain:<name> form.
+#
+#   Prefer the API key: it survives a password change and is scoped to App Store
+#   Connect. Credentials are resolved before the archive, so a missing one costs a
+#   second rather than a five-minute build, and neither secret is ever printed or
+#   passed as a literal argument.
+#
+#   Pass --no-upload to stop at the .ipa. Note that --archive-only and --no-build
+#   have nothing to upload and skip it implicitly.
 
 set -euo pipefail
 
@@ -71,9 +94,12 @@ DO_EXPORT=1
 REQUIRE_ANALYTICS=1
 DRY_RUN=0
 DO_GIT=1
+DO_UPLOAD=1
 
 print_help() {
-  sed -n '2,50p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  # Everything from line 2 up to the first non-comment line, so growing the header
+  # above never desyncs --help from it.
+  awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "${BASH_SOURCE[0]}"
 }
 
 for arg in "$@"; do
@@ -86,6 +112,7 @@ for arg in "$@"; do
     --no-build)      DO_BUILD=0 ;;
     --no-analytics)  REQUIRE_ANALYTICS=0 ;;
     --dry-run)       DRY_RUN=1 ;;
+    --no-upload)     DO_UPLOAD=0 ;;
     --no-git)        DO_GIT=0 ;;
     -h|--help)       print_help; exit 0 ;;
     *)
@@ -139,6 +166,77 @@ if [[ -z "$ANALYTICS_SOURCE" ]]; then
     exit 1
   fi
   ANALYTICS_SOURCE="(none — analytics will be disabled)"
+fi
+
+# ---- App Store Connect credentials ------------------------------------------
+#
+# Resolved the same way the analytics token is: report which source will supply it,
+# never the value. altool reads the app-specific password out of the environment
+# through its own @env: form, so the secret stays out of this process's argv and
+# out of `ps` output.
+#
+# --archive-only and --no-build produce no .ipa, so there is nothing to upload and
+# no credential to require.
+
+ASC_KEY_DIR="${ASC_KEY_DIR:-$HOME/.appstoreconnect/private_keys}"
+UPLOAD_SOURCE=""
+UPLOAD_BLOCKER=""
+ALTOOL_AUTH_ARGS=()
+
+if [[ $DO_BUILD -eq 0 ]]; then
+  DO_UPLOAD=0
+  UPLOAD_SOURCE="(skipped — --no-build)"
+elif [[ $DO_EXPORT -eq 0 ]]; then
+  DO_UPLOAD=0
+  UPLOAD_SOURCE="(skipped — --archive-only leaves no .ipa)"
+elif [[ $DO_UPLOAD -eq 0 ]]; then
+  UPLOAD_SOURCE="(skipped — --no-upload)"
+else
+  if [[ -n "${ASC_KEY_ID:-}" && -n "${ASC_ISSUER_ID:-}" ]]; then
+    ASC_KEY_FILE="$ASC_KEY_DIR/AuthKey_${ASC_KEY_ID}.p8"
+    if [[ -f "$ASC_KEY_FILE" ]]; then
+      UPLOAD_SOURCE="API key $ASC_KEY_ID"
+      ALTOOL_AUTH_ARGS=(--apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID")
+    else
+      UPLOAD_BLOCKER="ASC_KEY_ID is set but its private key is missing: $ASC_KEY_FILE"
+    fi
+  elif [[ -n "${ASC_APPLE_ID:-}" && -n "${ASC_APP_PASSWORD:-}" ]]; then
+    # altool's indirection forms (@env:VAR, @keychain:NAME) are handed through
+    # untouched; a bare value is referenced as @env: so it never reaches argv.
+    if [[ "$ASC_APP_PASSWORD" == @* ]]; then
+      ALTOOL_PASSWORD_REF="$ASC_APP_PASSWORD"
+    else
+      ALTOOL_PASSWORD_REF="@env:ASC_APP_PASSWORD"
+    fi
+    UPLOAD_SOURCE="Apple ID $ASC_APPLE_ID"
+    ALTOOL_AUTH_ARGS=(-u "$ASC_APPLE_ID" -p "$ALTOOL_PASSWORD_REF")
+  elif [[ -n "${ASC_APPLE_ID:-}" ]]; then
+    UPLOAD_BLOCKER="ASC_APPLE_ID is set but ASC_APP_PASSWORD is not"
+  elif [[ -n "${ASC_ISSUER_ID:-}" || -n "${ASC_KEY_ID:-}" ]]; then
+    UPLOAD_BLOCKER="ASC_KEY_ID and ASC_ISSUER_ID must both be set"
+  else
+    UPLOAD_BLOCKER="no App Store Connect credentials in the environment"
+  fi
+
+  if [[ -z "$UPLOAD_SOURCE" && $DRY_RUN -eq 1 ]]; then
+    # A dry run writes nothing and builds nothing, so there is no failure to head
+    # off — reporting the gap in the plan makes --dry-run a credential preflight
+    # you can run without spending a build number.
+    DO_UPLOAD=0
+    UPLOAD_SOURCE="(unavailable — $UPLOAD_BLOCKER)"
+  fi
+
+  if [[ -z "$UPLOAD_SOURCE" ]]; then
+    echo "error: cannot upload to TestFlight — $UPLOAD_BLOCKER." >&2
+    echo "       Set either an API key (preferred):" >&2
+    echo "         export ASC_KEY_ID=ABC123DEFG ASC_ISSUER_ID=<issuer-uuid>" >&2
+    echo "         # with AuthKey_ABC123DEFG.p8 in $ASC_KEY_DIR" >&2
+    echo "       or an Apple ID with an app-specific password:" >&2
+    echo "         export ASC_APPLE_ID=you@example.com ASC_APP_PASSWORD=abcd-efgh-ijkl-mnop" >&2
+    echo "       See the TestFlight section of --help, or pass --no-upload to stop" >&2
+    echo "       at the .ipa and upload it yourself." >&2
+    exit 1
+  fi
 fi
 
 # ---- read current versions --------------------------------------------------
@@ -258,6 +356,7 @@ if [[ $DO_BUILD -eq 1 ]]; then
 else
   echo "  build:       (skipped — --no-build)"
 fi
+echo "  testflight:  $UPLOAD_SOURCE"
 if [[ $DO_GIT -eq 1 ]]; then
   echo "  git:         commit version bump and push"
 else
@@ -416,6 +515,41 @@ PLIST
   fi
 fi
 
+# ---- upload to TestFlight ---------------------------------------------------
+#
+# The one irreversible step in this script. A build number is spent the moment the
+# upload is accepted, whether or not the build is ever released — which is why the
+# failure path below points at --build= rather than suggesting a retry.
+#
+# Upload finishing is not the build being testable: App Store Connect then runs its
+# own processing, usually a few minutes, before TestFlight shows it to testers.
+
+if [[ $DO_UPLOAD -eq 1 ]]; then
+  if [[ ! -f "$IPA_PATH" ]]; then
+    echo "error: expected an .ipa to upload at $IPA_PATH, but it is missing" >&2
+    exit 1
+  fi
+
+  echo "==> xcrun altool --upload-app ($UPLOAD_SOURCE)"
+  if ! xcrun altool --upload-app -f "$IPA_PATH" -t ios "${ALTOOL_AUTH_ARGS[@]}"; then
+    echo "" >&2
+    echo "error: the upload failed. The .ipa itself is fine and is still at:" >&2
+    echo "         $IPA_PATH" >&2
+    echo "" >&2
+    echo "       The usual causes:" >&2
+    echo "         - build $NEXT_BUILD already exists for version $NEXT_VERSION in App" >&2
+    echo "           Store Connect. Build numbers are spent on upload, so rerun with" >&2
+    echo "           --build=$((NEXT_BUILD + 1)) rather than retrying this one." >&2
+    echo "         - the credential is not authorised: an API key needs the App" >&2
+    echo "           Manager role, and a revoked key fails the same way." >&2
+    echo "         - the export was not signed for the App Store. A development-signed" >&2
+    echo "           .ipa is rejected at upload, not at export." >&2
+    echo "" >&2
+    echo "       You can also upload the .ipa above with Transporter." >&2
+    exit 1
+  fi
+fi
+
 # ---- report outputs ---------------------------------------------------------
 
 echo ""
@@ -427,10 +561,18 @@ echo "  archive:     $ARCHIVE_PATH"
 if [[ $DO_EXPORT -eq 1 ]]; then
   if [[ -f "$IPA_PATH" ]]; then
     echo "  ipa:         $IPA_PATH"
-    echo ""
-    echo "  Upload it with Transporter, or:"
-    echo "    xcrun altool --upload-app -f \"$IPA_PATH\" -t ios \\"
-    echo "      --apiKey <key-id> --apiIssuer <issuer-id>"
+    if [[ $DO_UPLOAD -eq 1 ]]; then
+      echo "  testflight:  uploaded via $UPLOAD_SOURCE"
+      echo ""
+      echo "  App Store Connect is processing build $NEXT_BUILD now; TestFlight shows it"
+      echo "  to testers once that finishes, usually within a few minutes."
+    else
+      echo "  testflight:  $UPLOAD_SOURCE"
+      echo ""
+      echo "  Upload it with Transporter, or:"
+      echo "    xcrun altool --upload-app -f \"$IPA_PATH\" -t ios \\"
+      echo "      --apiKey <key-id> --apiIssuer <issuer-id>"
+    fi
   else
     echo "  ipa:         (expected at $IPA_PATH but not found — check the export output)"
   fi
