@@ -278,7 +278,11 @@ final class WeekViewModel {
 
     // MARK: - AI generation
 
-    func generateWithAI(ingredients: [String], moodCuisines: [String]) async {
+    func generateWithAI(
+        ingredients: [String],
+        moodCuisines: [String],
+        restrictToIngredients: Bool = false
+    ) async {
         isAIPromptOpen = false
         isGenerating = true
 
@@ -292,6 +296,7 @@ final class WeekViewModel {
                 AnalyticsProperties.hasIngredients: !ingredients.isEmpty,
                 AnalyticsProperties.ingredientCount: ingredients.count,
                 AnalyticsProperties.moodCuisineCount: moodCuisines.count,
+                AnalyticsProperties.restrictToIngredients: restrictToIngredients,
             ] as [String: Any]
         )
         if !moodCuisines.isEmpty {
@@ -306,7 +311,8 @@ final class WeekViewModel {
             let generated = try await env.ai.generateWeek(
                 weekStartDate: weekStartDate,
                 ingredients: ingredients,
-                moodCuisines: moodCuisines
+                moodCuisines: moodCuisines,
+                restrictToIngredients: restrictToIngredients
             )
             // Fill-empty-only: generation never overwrites a dish the user chose.
             plan = plan.mergingFillingEmpty(with: generated)

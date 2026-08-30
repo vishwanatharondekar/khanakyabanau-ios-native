@@ -245,6 +245,21 @@ struct OnboardingView: View {
                 )
                 try await env.settings.saveDietary(dietary)
 
+                // Phase 2 — the first week, generated from the preferences just
+                // saved. Best effort and silent: `onboardingCompleted` is already
+                // true server-side, so a failure here must not hold the user on
+                // this screen. They land on an empty week and the Week tab's AI
+                // button, which does report errors and guest limits.
+                // Android sequences it the same way (`OnboardingViewModel.complete`).
+                savingMessage = "Cooking up your first week…"
+                if let seeded = await env.firstWeek.seedCurrentWeek() {
+                    // Detached on purpose: prep is a second slow AI call, and
+                    // waiting on it would hold the user here with nothing new to
+                    // look at. Unstructured, so completing onboarding below cannot
+                    // cancel it.
+                    Task { await env.firstWeek.fillPrep(weekStartDate: seeded) }
+                }
+
                 env.analytics.track(
                     AnalyticsEvents.Onboarding.complete,
                     category: AnalyticsEvents.Category.onboarding,

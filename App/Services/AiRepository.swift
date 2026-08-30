@@ -66,13 +66,15 @@ final class AiRepository {
     func generateWeek(
         weekStartDate: String,
         ingredients: [String] = [],
-        moodCuisines: [String] = []
+        moodCuisines: [String] = [],
+        restrictToIngredients: Bool = false
     ) async throws -> [String: DayMeals] {
         try await api.send(
             Endpoints.generateMeals(AIGenerateRequest(
                 weekStartDate: weekStartDate,
                 ingredients: ingredients,
-                moodCuisines: moodCuisines
+                moodCuisines: moodCuisines,
+                restrictToIngredients: restrictToIngredients
             )),
             as: [String: DayMeals].self
         )
