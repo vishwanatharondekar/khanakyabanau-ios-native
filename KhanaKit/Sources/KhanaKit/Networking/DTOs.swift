@@ -175,10 +175,19 @@ public struct AIGenerateRequest: Encodable, Sendable {
     public var ingredients: [String]
     /// A per-generation override, separate from the persisted cuisine preference.
     public var moodCuisines: [String]
-    public init(weekStartDate: String, ingredients: [String] = [], moodCuisines: [String] = []) {
+    /// Turns `ingredients` from an inclusion hint into an exclusion constraint.
+    /// Optional server-side, so an older build that omits it is unaffected.
+    public var restrictToIngredients: Bool
+    public init(
+        weekStartDate: String,
+        ingredients: [String] = [],
+        moodCuisines: [String] = [],
+        restrictToIngredients: Bool = false
+    ) {
         self.weekStartDate = weekStartDate
         self.ingredients = ingredients
         self.moodCuisines = moodCuisines
+        self.restrictToIngredients = restrictToIngredients
     }
 }
 

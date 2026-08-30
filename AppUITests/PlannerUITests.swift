@@ -233,6 +233,12 @@ final class PlannerUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["WHAT'S IN THE PANTRY?"].exists)
         XCTAssertTrue(app.staticTexts["I AM IN MOOD FOR"].exists)
         XCTAssertTrue(app.buttons["Generate"].exists)
+
+        // Disabled until the pantry has enough in it to build a week from.
+        let restrictToggle = app.switches["Use only these ingredients"]
+        XCTAssertTrue(restrictToggle.exists, "The ingredient restriction toggle is missing")
+        XCTAssertFalse(restrictToggle.isEnabled, "The toggle should be gated on an empty pantry")
+        XCTAssertTrue(app.staticTexts["Add at least 3 ingredients to use this."].exists)
         attach(app, "25-ai-prompt")
         app.buttons["Cancel"].tap()
         XCTAssertTrue(app.staticTexts["THE WEEK OF"].waitForExistence(timeout: 15))
