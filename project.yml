@@ -15,8 +15,8 @@ settings:
     # `xcodegen generate` never drops your device-signing setup.
     DEVELOPMENT_TEAM: HL88YQFR35
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.0.1"
-    CURRENT_PROJECT_VERSION: "10"
+    MARKETING_VERSION: "1.0.2"
+    CURRENT_PROJECT_VERSION: "11"
     CODE_SIGN_STYLE: Automatic
     # The simulator needs no signing identity; a device build supplies its own team.
     CODE_SIGNING_ALLOWED: "YES"
