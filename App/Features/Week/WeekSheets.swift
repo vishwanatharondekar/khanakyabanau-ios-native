@@ -334,7 +334,7 @@ struct AIPromptSheet: View {
                     Text("What's in the pantry?".eyebrow)
                         .kkbFont(.sectionLabel)
                         .foregroundStyle(Kkb.accentText)
-                    Text("List what you've already got, comma-separated. We'll weave them in.")
+                    Text("Optional — we'll weave in what you've got.")
                         .kkbFont(.bodySmall)
                         .foregroundStyle(Kkb.textSecondary)
                     TextField("paneer, palak, dosa batter…", text: $ingredients, axis: .vertical)

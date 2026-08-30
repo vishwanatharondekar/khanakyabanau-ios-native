@@ -1,9 +1,13 @@
 import KhanaKit
 import SwiftUI
 
-/// One day of the week grid. Today and tomorrow get a coloured ribbon and a tinted
-/// body so the eye lands on them first.
-struct DayCard: View {
+/// One day: its name as a heading, then a card per meal beneath it.
+///
+/// The day used to be a single card with the meals as rows inside it. Pulling the
+/// heading out and giving each meal its own card is what lets a dish name run the
+/// full width of the screen — the width a day card spent on its own chrome was
+/// width the name could not use.
+struct WeekDaySection: View {
     var day: DayOfWeek
     var date: PlanDate
     var meals: DayMeals
@@ -23,6 +27,18 @@ struct DayCard: View {
         return day.displayName
     }
 
+    /// On Today and Tomorrow the weekday is no longer the title, so it joins the
+    /// date here rather than being lost.
+    private var trailing: String {
+        let parts = [
+            isToday || isTomorrow ? day.displayName : nil,
+            "\(date.day) \(date.shortMonthName)",
+        ]
+        return parts.compactMap { $0 }.joined(separator: " ")
+    }
+
+    /// With the heading outside a card there is nothing else carrying "this is
+    /// today" down the list, so the tint moves onto the day's meal cards.
     private var bodyTint: Color {
         if isToday { return Kkb.marigoldSurface.opacity(0.45) }
         if isTomorrow { return Kkb.marigoldSurface.opacity(0.20) }
@@ -30,63 +46,47 @@ struct DayCard: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            if isToday {
-                Ribbon(kind: .today).padding(.vertical, 14).padding(.leading, 6)
-            } else if isTomorrow {
-                Ribbon(kind: .tomorrow).padding(.vertical, 14).padding(.leading, 6)
-            } else {
-                Color.clear.frame(width: 3).padding(.leading, 6)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(title)
+                    .kkbFont(.displayMedium)
+                    .foregroundStyle(Kkb.textPrimary)
+                    .modifier(ConditionalHighlight(isOn: isToday || isTomorrow))
+                Text(trailing)
+                    .kkbFont(.sectionLabel)
+                    .foregroundStyle(Kkb.textSecondary)
+                Spacer(minLength: 0)
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(title)
-                        .kkbFont(.displayMedium)
-                        .foregroundStyle(Kkb.textPrimary)
-                        .modifier(ConditionalHighlight(isOn: isToday || isTomorrow))
-                    if isToday || isTomorrow {
-                        Text("· \(day.displayName)")
-                            .kkbFont(.bodyMedium)
-                            .foregroundStyle(Kkb.textSecondary)
-                    }
-                    Spacer()
-                    Text("\(date.shortMonthName) \(date.day)")
-                        .kkbFont(.sectionLabel)
-                        .foregroundStyle(Kkb.textSecondary)
-                }
-
-                ForEach(enabledTypes) { type in
-                    MealRow(
-                        day: day,
-                        type: type,
-                        meal: meals[type],
-                        isResolvingImages: isResolvingImages,
-                        videoURL: videoURL(meals[type]),
-                        onTap: { onTapRow(type) },
-                        onEdit: { onEdit(type) },
-                        onSwap: { onSwap(type) },
-                        onVideo: { onVideo(type) }
-                    )
-                    if type != enabledTypes.last {
-                        Divider().overlay(Kkb.hairline.opacity(0.5))
-                    }
-                }
-            }
-            .padding(14)
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Kkb.surface)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous).fill(bodyTint)
+            ForEach(enabledTypes) { type in
+                MealRow(
+                    day: day,
+                    type: type,
+                    meal: meals[type],
+                    isResolvingImages: isResolvingImages,
+                    videoURL: videoURL(meals[type]),
+                    onTap: { onTapRow(type) },
+                    onEdit: { onEdit(type) },
+                    onSwap: { onSwap(type) },
+                    onVideo: { onVideo(type) }
                 )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Kkb.hairline, lineWidth: 1)
-        )
-        .shadow(color: Kkb.ink800.opacity(0.08), radius: 10, x: 0, y: 3)
+                .padding(.vertical, 4)
+                .padding(.horizontal, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Kkb.surface)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous).fill(bodyTint)
+                        )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Kkb.hairline, lineWidth: 1)
+                )
+                .shadow(color: Kkb.ink800.opacity(0.08), radius: 10, x: 0, y: 3)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -119,7 +119,7 @@ struct MealRow: View {
                 HStack(alignment: .top, spacing: 12) {
                     MealThumbnail(
                         imageUrl: meal.imageUrl,
-                        size: 88,
+                        size: 110,
                         cornerRadius: 18,
                         isResolving: isResolvingImages && meal.imageUrl == nil && !meal.isEmpty,
                         emoji: type.emoji
@@ -139,7 +139,6 @@ struct MealRow: View {
                                 .kkbFont(.displaySmall)
                                 .foregroundStyle(Kkb.textPrimary)
                                 .multilineTextAlignment(.leading)
-                                .lineLimit(3)
                         }
 
                         HStack(spacing: 6) {

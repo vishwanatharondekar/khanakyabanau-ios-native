@@ -63,7 +63,7 @@ struct WeekView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 12) {
+                    LazyVStack(spacing: 18) {
                         WeekHeader(
                             label: model.weekRangeLabel,
                             onPrevious: { Task { await model.goToPreviousWeek() } },
@@ -81,7 +81,7 @@ struct WeekView: View {
                         ForEach(Array(WeekDates.daysOfWeek(
                             from: PlanDate(iso: model.weekStartDate) ?? WeekDates.currentMonday()
                         ).enumerated()), id: \.element.day) { index, entry in
-                            DayCard(
+                            WeekDaySection(
                                 day: entry.day,
                                 date: entry.date,
                                 meals: model.plan.meals(for: entry.day),
@@ -109,7 +109,7 @@ struct WeekView: View {
                             )
                         }
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, 12)
                     .padding(.vertical, 16)
                     .frame(maxWidth: 680)
                     .frame(maxWidth: .infinity)
