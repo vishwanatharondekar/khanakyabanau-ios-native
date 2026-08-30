@@ -308,11 +308,25 @@ private struct SuggestionCard: View {
 struct AIPromptSheet: View {
     @Environment(\.dismiss) private var dismiss
 
-    var onGenerate: ([String], [String]) -> Void
+    var onGenerate: ([String], [String], Bool) -> Void
     var onCancel: () -> Void
 
     @State private var ingredients = ""
     @State private var moods: Set<String> = []
+    @State private var restrictToIngredients = false
+
+    /// Fewest items that can fill a week; keep in step with
+    /// MIN_RESTRICTED_INGREDIENTS in the webapp's lib/ingredient-restriction.ts.
+    private let minRestrictedIngredients = 3
+
+    private var parsedIngredients: [String] {
+        ingredients
+            .split(whereSeparator: { $0 == "," || $0 == "\n" })
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private var canRestrict: Bool { parsedIngredients.count >= minRestrictedIngredients }
 
     var body: some View {
         SheetScaffold(
@@ -321,11 +335,7 @@ struct AIPromptSheet: View {
             confirmTitle: "Generate",
             onCancel: { onCancel(); dismiss() },
             onConfirm: {
-                let parsed = ingredients
-                    .split(whereSeparator: { $0 == "," || $0 == "\n" })
-                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    .filter { !$0.isEmpty }
-                onGenerate(parsed, Array(moods).sorted())
+                onGenerate(parsedIngredients, Array(moods).sorted(), canRestrict && restrictToIngredients)
                 dismiss()
             }
         ) {
@@ -349,6 +359,30 @@ struct AIPromptSheet: View {
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
                                 .stroke(Kkb.hairline, lineWidth: 1)
                         )
+
+                    Toggle(isOn: Binding(
+                        get: { canRestrict && restrictToIngredients },
+                        set: { restrictToIngredients = $0 }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Use only these ingredients")
+                                .kkbFont(.bodyLarge)
+                                .foregroundStyle(canRestrict ? Kkb.textPrimary : Kkb.textSecondary)
+                            Text(canRestrict
+                                 ? "Build the whole week from this list alone — nothing else to buy."
+                                 : "Add at least 3 ingredients to use this.")
+                                .kkbFont(.bodySmall)
+                                .foregroundStyle(Kkb.textSecondary)
+                        }
+                    }
+                    .disabled(!canRestrict)
+                    .padding(.top, 4)
+
+                    if canRestrict && restrictToIngredients {
+                        Text("We'll still assume you have the basics — salt, oil, ghee, everyday spices, onion, garlic and ginger.")
+                            .kkbFont(.bodySmall)
+                            .foregroundStyle(Kkb.textSecondary)
+                    }
                 }
 
                 Divider().overlay(Kkb.hairline)

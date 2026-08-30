@@ -149,8 +149,14 @@ struct WeekView: View {
         }
         .sheet(isPresented: $model.isAIPromptOpen) {
             AIPromptSheet(
-                onGenerate: { ingredients, moods in
-                    Task { await model.generateWithAI(ingredients: ingredients, moodCuisines: moods) }
+                onGenerate: { ingredients, moods, restrictToIngredients in
+                    Task {
+                        await model.generateWithAI(
+                            ingredients: ingredients,
+                            moodCuisines: moods,
+                            restrictToIngredients: restrictToIngredients
+                        )
+                    }
                 },
                 onCancel: { model.isAIPromptOpen = false }
             )

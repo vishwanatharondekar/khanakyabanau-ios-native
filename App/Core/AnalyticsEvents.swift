@@ -107,6 +107,7 @@ enum AnalyticsProperties {
     static let ingredientCount = "ingredient_count"
     static let hasIngredients = "has_ingredients"
     static let moodCuisineCount = "mood_cuisine_count"
+    static let restrictToIngredients = "restrict_to_ingredients"
     static let source = "source"
     static let shareTarget = "share_target"
     static let language = "language"
