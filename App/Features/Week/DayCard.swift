@@ -70,7 +70,11 @@ struct WeekDaySection: View {
                     onSwap: { onSwap(type) },
                     onVideo: { onVideo(type) }
                 )
-                .padding(.vertical, 4)
+                // 14, not the 4 the card wrapper alone would give: MealRow has no
+                // vertical padding of its own — it used to take its breathing room
+                // from the day card's .padding(14). Matches Android, where the
+                // meal row contributes 10 of its own on top of the card's 4.
+                .padding(.vertical, 14)
                 .padding(.horizontal, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
