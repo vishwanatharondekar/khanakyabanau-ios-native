@@ -20,6 +20,11 @@ final class PushService: NSObject {
 
     private let api: APIClient
     private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
+    /// Whether `authorizationStatus` has been read from the system yet. Its initial
+    /// `.notDetermined` is a placeholder rather than an answer, and a surface that
+    /// treats it as one tells a user who has already allowed notifications to go
+    /// and allow them.
+    private(set) var hasResolvedAuthorization = false
     private var fcmToken: String?
 
     /// Firebase is only wired up when a real `GoogleService-Info.plist` is present.
@@ -39,6 +44,25 @@ final class PushService: NSObject {
 
     func configure() {
         guard !isConfigured else { return }
+        let hasFirebase = configureFirebase()
+        // Deliberately outside that: whether the user has allowed notifications has
+        // nothing to do with Firebase. Local prep reminders need the permission and
+        // work with push unconfigured, so a placeholder plist returning early must
+        // not leave every surface that asks — the Tomorrow card's nudge above all —
+        // believing notifications are off for the rest of the session.
+        Task {
+            await refreshAuthorizationStatus()
+            // APNs registration is per-launch, not once-ever: without this the app
+            // only ever has a live token in the session where permission was first
+            // granted.
+            guard hasFirebase, areNotificationsEnabled else { return }
+            UIApplication.shared.registerForRemoteNotifications()
+            await registerIfAuthorized()
+        }
+    }
+
+    /// Configures Firebase when a real plist is bundled, reporting whether it did.
+    private func configureFirebase() -> Bool {
         guard let options = FirebaseOptions(
             contentsOfFile: Bundle.main.path(
                 forResource: "GoogleService-Info", ofType: "plist"
@@ -47,21 +71,12 @@ final class PushService: NSObject {
             #if DEBUG
             print("[push] GoogleService-Info.plist is a placeholder — push disabled.")
             #endif
-            return
+            return false
         }
         FirebaseApp.configure(options: options)
         Messaging.messaging().delegate = self
         isConfigured = true
-        Task {
-            await refreshAuthorizationStatus()
-            // APNs registration is per-launch, not once-ever: without this the app
-            // only ever has a live token in the session where permission was first
-            // granted.
-            if areNotificationsEnabled {
-                UIApplication.shared.registerForRemoteNotifications()
-                await registerIfAuthorized()
-            }
-        }
+        return true
     }
 
     /// A placeholder plist has our sentinel values; a real one has a Google API key
@@ -79,6 +94,7 @@ final class PushService: NSObject {
     func refreshAuthorizationStatus() async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         authorizationStatus = settings.authorizationStatus
+        hasResolvedAuthorization = true
     }
 
     var areNotificationsEnabled: Bool {

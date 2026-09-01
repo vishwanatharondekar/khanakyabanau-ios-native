@@ -16,19 +16,12 @@ struct RecipeVideoSheet: View {
     var onDismiss: () -> Void
 
     @State private var tab = 0
-    @State private var query = ""
-    @State private var results: [RecipeVideoResult] = []
-    @State private var nextPageToken: String?
-    @State private var isSearching = false
-    @State private var searchError: String?
-    @State private var expandedVideoID: String?
+    /// The search itself, shared with the meal detail page's inline search.
+    @State private var search = RecipeVideoSearchModel()
     @State private var pastedURL = ""
     @State private var pasteError: String?
     @State private var isSaving = false
     @State private var toast: String?
-    /// A main-dish lookup is in flight; the search waits for it rather than
-    /// spending a query on the whole plate.
-    @State private var isIdentifying = false
     /// The chip the user tapped, if it is still among the matches.
     @State private var selectedSavedKey: String?
     @State private var isRemoving = false
@@ -82,24 +75,7 @@ struct RecipeVideoSheet: View {
         .kkbToast($toast)
         .task {
             await env.videos.ensureLoaded()
-            guard query.isEmpty else { return }
-
-            // Narrowed before anything is searched for: this sheet's first search
-            // is what the user judges the feature by, and "Gujarati dal, steamed
-            // rice, bhindi nu shaak and phulka" returns thali compilations rather
-            // than a dal recipe. Short names are already a dish, and a lookup that
-            // finds nothing to narrow falls back to the name as written.
-            if RecipeVideoKeys.needsMainDishLookup(context.mealName) {
-                isIdentifying = true
-                let dish = await env.ai.mainDish(for: context.mealName)
-                isIdentifying = false
-                // The user may have started typing while the lookup was in
-                // flight; their query wins.
-                if query.isEmpty { query = dish ?? context.mealName }
-            } else {
-                query = context.mealName
-            }
-            await runSearch(reset: true)
+            await search.start(mealName: context.mealName, env: env)
         }
         .onDisappear { onDismiss() }
     }
@@ -261,143 +237,14 @@ struct RecipeVideoSheet: View {
     // MARK: - Search
 
     private var searchPanel: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 10) {
-                TextField("Search for cooking videos…", text: $query)
-                    .kkbFont(.bodyLarge)
-                    .submitLabel(.search)
-                    .onSubmit { Task { await runSearch(reset: true) } }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(Kkb.surfaceSunken)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Kkb.hairline, lineWidth: 1)
-                    )
-                Button { Task { await runSearch(reset: true) } } label: {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Kkb.cream50)
-                        .frame(width: 44, height: 44)
-                        .background(Circle().fill(Kkb.terracotta500))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Search")
+        RecipeVideoSearchPanel(
+            model: search,
+            hiddenVideoIDs: savedVideoIDs,
+            isSaving: isSaving,
+            onSave: { result in
+                Task { await save(url: result.url, source: "search_result") }
             }
-
-            if isIdentifying || (isSearching && results.isEmpty) {
-                ProgressView().tint(Kkb.terracotta500)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 30)
-            } else if let searchError {
-                InlineErrorCard(message: searchError) {
-                    Task { await runSearch(reset: true) }
-                }
-            } else if results.isEmpty {
-                KkbEmptyState(
-                    script: "No videos found",
-                    caption: "No videos found for \"\(query)\" — try a different search.",
-                    alignment: .leading
-                )
-                .padding(.vertical, 20)
-            } else {
-                ForEach(results.filter { !savedVideoIDs.contains($0.id) }) { result in
-                    resultCard(result)
-                }
-
-                if nextPageToken != nil {
-                    Button {
-                        Task { await runSearch(reset: false) }
-                    } label: {
-                        HStack(spacing: 8) {
-                            if isSearching {
-                                ProgressView().controlSize(.small).tint(Kkb.accentText)
-                            }
-                            Text(isSearching ? "Loading…" : "Load more")
-                        }
-                        .kkbFont(.labelLarge)
-                        .foregroundStyle(Kkb.accentText)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Capsule().fill(Kkb.terracottaSurface.opacity(0.7)))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isSearching)
-                }
-            }
-        }
-    }
-
-    private func resultCard(_ result: RecipeVideoResult) -> some View {
-        PaperCard(cornerRadius: 18, padding: 12) {
-            VStack(alignment: .leading, spacing: 10) {
-                Button {
-                    // Only one preview is live at a time — several WKWebViews on
-                    // screen together is a real memory and battery cost.
-                    expandedVideoID = expandedVideoID == result.id ? nil : result.id
-                } label: {
-                    ZStack {
-                        if expandedVideoID == result.id {
-                            YouTubePreview(videoID: result.id)
-                        } else if let thumb = result.thumbnailUrl, let url = URL(string: thumb) {
-                            AsyncImage(url: url) { image in
-                                image.resizable().scaledToFill()
-                            } placeholder: {
-                                Kkb.creamWell
-                            }
-                            Circle()
-                                .fill(.black.opacity(0.55))
-                                .frame(width: 46, height: 46)
-                                .overlay(
-                                    Image(systemName: "play.fill")
-                                        .foregroundStyle(.white)
-                                        .font(.system(size: 17))
-                                )
-                        } else {
-                            Kkb.creamWell
-                        }
-                    }
-                    .aspectRatio(16 / 9, contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Preview \(result.title)")
-
-                Text(result.title)
-                    .kkbFont(.bodyMedium)
-                    .foregroundStyle(Kkb.textPrimary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                HStack(spacing: 8) {
-                    Text(result.channelTitle)
-                        .kkbFont(.bodySmall)
-                        .foregroundStyle(Kkb.textSecondary)
-                        .lineLimit(1)
-                    if let duration = result.duration {
-                        Text("· \(duration)")
-                            .kkbFont(.bodySmall)
-                            .foregroundStyle(Kkb.textSecondary)
-                    }
-                    Spacer()
-                    Button {
-                        Task { await save(url: result.url, source: "search_result") }
-                    } label: {
-                        Text(isSaving ? "Saving…" : "Save")
-                            .kkbFont(.sectionLabel)
-                            .foregroundStyle(Kkb.cream50)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 7)
-                            .background(Capsule().fill(Kkb.terracotta500))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isSaving)
-                }
-            }
-        }
+        )
     }
 
     // MARK: - Paste
@@ -469,30 +316,6 @@ struct RecipeVideoSheet: View {
             toast = "Failed to remove the video"
         }
         isRemoving = false
-    }
-
-    private func runSearch(reset: Bool) async {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        isSearching = true
-        searchError = nil
-        if reset {
-            results = []
-            nextPageToken = nil
-            expandedVideoID = nil
-        }
-        do {
-            let page = try await env.videos.search(
-                query: trimmed, pageToken: reset ? nil : nextPageToken
-            )
-            results.append(contentsOf: page.items)
-            nextPageToken = page.nextPageToken
-        } catch let error as APIError {
-            searchError = error.userMessage(fallback: "Could not search for videos right now.")
-        } catch {
-            searchError = "Could not search for videos right now."
-        }
-        isSearching = false
     }
 
     private func save(url: String, source: String) async {

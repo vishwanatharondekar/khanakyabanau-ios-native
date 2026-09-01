@@ -4,8 +4,6 @@ import SwiftUI
 /// "Today's Menu" — one card per enabled course, then a look ahead at tomorrow
 /// with whatever has to be started tonight.
 struct TodayView: View {
-    @Environment(\.app) private var env
-
     /// Shared with Tomorrow and Meal Detail, and owned by `HomeView`, so moving
     /// between them never refetches.
     let model: TodayViewModel
@@ -44,7 +42,6 @@ struct TodayView: View {
                             meal: model.today.meals[type],
                             showCalories: model.showCalories,
                             isResolvingImages: model.isResolvingImages,
-                            hasSavedVideo: env.videos.hasSavedPick(for: model.today.meals[type].name),
                             onTap: {
                                 guard !model.today.meals[type].isEmpty else { return }
                                 onOpenMeal(model.today.day, type)
@@ -114,7 +111,6 @@ struct TodayMealCard: View {
     var meal: Meal
     var showCalories: Bool
     var isResolvingImages: Bool
-    var hasSavedVideo: Bool
     var onTap: () -> Void
 
     var body: some View {
@@ -138,16 +134,6 @@ struct TodayMealCard: View {
                                 .foregroundStyle(type.chipText)
                         }
                         Spacer()
-                        if hasSavedVideo {
-                            Text("🎥 RECIPE VIDEO")
-                                .font(.system(size: 9, weight: .bold))
-                                .tracking(1)
-                                .foregroundStyle(Kkb.sageText)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Capsule().fill(Kkb.sageSurface))
-                                .rotationEffect(.degrees(-4))
-                        }
                     }
 
                     if meal.isEmpty {

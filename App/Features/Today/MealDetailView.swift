@@ -18,6 +18,10 @@ struct MealDetailView: View {
     @State private var pasteError: String?
     @State private var isSavingPaste = false
     @State private var toast: String?
+    /// The search this section falls back on when the dish has no saved pick —
+    /// the same model the picker sheet searches with.
+    @State private var search = RecipeVideoSearchModel()
+    @State private var isSavingVideo = false
 
     var body: some View {
         Group {
@@ -146,11 +150,16 @@ struct MealDetailView: View {
 
     // MARK: - Recipe video
 
+    /// The user's own pick if there is one; otherwise the search itself.
+    ///
+    /// A dish with nothing saved used to land on "No video yet" and a button —
+    /// a dead end on the one screen someone opens *because* they are about to
+    /// cook. It now searches on arrival and shows the top pick over the rest of
+    /// the results, which is the experience the picker sheet already gives.
     @ViewBuilder
     private func recipeVideoSection(section: DaySection, meal: Meal) -> some View {
         let savedURL = env.videos.hasSavedPick(for: meal.name)
             ? env.videos.url(for: meal) : nil
-        let topPick = savedURL == nil ? meal.videoUrl : nil
 
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -159,53 +168,101 @@ struct MealDetailView: View {
                     .italic()
                     .foregroundStyle(Kkb.accentText)
                 Spacer()
-                Button("FIND ANOTHER") { openPicker(section: section, meal: meal) }
-                    .kkbFont(.sectionLabel)
-                    .foregroundStyle(Kkb.accentText)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Capsule().fill(Kkb.terracottaSurface))
+                // Only worth offering over a saved pick. Without one this section
+                // is already the search, so the button would open a sheet onto the
+                // same results.
+                if savedURL != nil {
+                    Button("FIND ANOTHER") { openPicker(section: section, meal: meal) }
+                        .kkbFont(.sectionLabel)
+                        .foregroundStyle(Kkb.accentText)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Capsule().fill(Kkb.terracottaSurface))
+                }
             }
             Rectangle().fill(Kkb.terracotta200).frame(height: 2)
 
             if let savedURL {
-                videoTag("YOUR SAVED RECIPE", tint: Kkb.sageText, fill: Kkb.sageSurface)
-                videoCard(url: savedURL)
-                Button {
-                    env.analytics.track(
-                        AnalyticsEvents.Video.play,
-                        category: AnalyticsEvents.Category.videoManagement,
-                        parameters: [
-                            AnalyticsProperties.mealName: meal.name,
-                            AnalyticsProperties.videoURL: savedURL,
-                            AnalyticsProperties.source: "meal_detail",
-                        ]
-                    )
-                    if let url = URL(string: savedURL) { UIApplication.shared.open(url) }
-                } label: {
-                    actionLabel("Watch on YouTube", systemImage: "play.fill")
-                }
-                .buttonStyle(.plain)
-            } else if let topPick, !topPick.isEmpty {
-                videoTag("TOP PICK", tint: Kkb.marigoldText, fill: Kkb.marigoldSurface)
-                videoCard(url: topPick)
-                Button { openPicker(section: section, meal: meal) } label: {
-                    actionLabel("Preview & save", systemImage: "bookmark")
-                }
-                .buttonStyle(.plain)
+                savedVideo(url: savedURL, meal: meal)
             } else {
-                KkbEmptyState(
-                    script: "No video yet",
-                    caption: "Search YouTube, or paste a link below.",
-                    alignment: .leading
-                )
-                Button { openPicker(section: section, meal: meal) } label: {
-                    actionLabel("Search recipe videos", systemImage: "magnifyingglass")
-                }
-                .buttonStyle(.plain)
+                videoSearch(meal: meal)
             }
 
             pasteRow(meal: meal)
+        }
+        // The search is what this section *is* when nothing is saved, so it runs on
+        // arrival rather than on a tap. `ensureLoaded` first: an unloaded video map
+        // reads as "nothing saved", and searching over the user's own pick would be
+        // a worse dead end than the one this replaces.
+        .task(id: meal.name) {
+            await env.videos.ensureLoaded()
+            guard !env.videos.hasSavedPick(for: meal.name) else { return }
+            await search.start(mealName: meal.name, env: env)
+        }
+    }
+
+    @ViewBuilder
+    private func savedVideo(url: String, meal: Meal) -> some View {
+        videoTag("YOUR SAVED RECIPE", tint: Kkb.sageText, fill: Kkb.sageSurface)
+        videoCard(url: url)
+        Button {
+            env.analytics.track(
+                AnalyticsEvents.Video.play,
+                category: AnalyticsEvents.Category.videoManagement,
+                parameters: [
+                    AnalyticsProperties.mealName: meal.name,
+                    AnalyticsProperties.videoURL: url,
+                    AnalyticsProperties.source: "meal_detail",
+                ]
+            )
+            if let target = URL(string: url) { UIApplication.shared.open(target) }
+        } label: {
+            actionLabel("Watch on YouTube", systemImage: "play.fill")
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// The top pick — the video the server already cached against this slot, or
+    /// failing that the best result the search came back with — over everything
+    /// else the search found.
+    @ViewBuilder
+    private func videoSearch(meal: Meal) -> some View {
+        let slotPick = meal.videoUrl?.isEmpty == false ? meal.videoUrl : nil
+        let topPick = slotPick ?? search.results.first?.url
+        let topPickID = topPick.flatMap { RecipeVideos.videoID(from: $0) }
+
+        if let topPick, let topPickID {
+            topPickCard(url: topPick, videoID: topPickID, meal: meal)
+        }
+
+        RecipeVideoSearchPanel(
+            model: search,
+            hiddenVideoIDs: topPickID.map { Set([$0]) } ?? [],
+            isSaving: isSavingVideo,
+            onSave: { result in
+                Task { await saveVideo(url: result.url, source: "meal_detail_search", meal: meal) }
+            }
+        )
+    }
+
+    private func topPickCard(url: String, videoID: String, meal: Meal) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            videoTag("TOP PICK", tint: Kkb.marigoldText, fill: Kkb.marigoldSurface)
+            YouTubePreview(videoID: videoID)
+                .aspectRatio(16 / 9, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            Text("Play it here, then save it to keep it for this dish.")
+                .kkbFont(.bodySmall)
+                .foregroundStyle(Kkb.textSecondary)
+            Button {
+                Task { await saveVideo(url: url, source: "meal_detail_top_pick", meal: meal) }
+            } label: {
+                actionLabel(
+                    isSavingVideo ? "Saving…" : "Save this video", systemImage: "bookmark"
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(isSavingVideo)
         }
     }
 
@@ -327,6 +384,26 @@ struct MealDetailView: View {
             pasteError = "Failed to save recipe video"
         }
         isSavingPaste = false
+    }
+
+    private func saveVideo(url: String, source: String, meal: Meal) async {
+        isSavingVideo = true
+        do {
+            try await env.videos.saveForMeal(mealName: meal.name, videoUrl: url)
+            env.analytics.track(
+                AnalyticsEvents.Video.addURL,
+                category: AnalyticsEvents.Category.videoManagement,
+                parameters: [
+                    AnalyticsProperties.mealName: meal.name,
+                    AnalyticsProperties.videoURL: url,
+                    AnalyticsProperties.source: source,
+                ]
+            )
+            toast = "Recipe video saved!"
+        } catch {
+            toast = "Failed to save recipe video"
+        }
+        isSavingVideo = false
     }
 
     private func openPicker(section: DaySection, meal: Meal) {

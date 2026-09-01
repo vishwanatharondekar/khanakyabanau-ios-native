@@ -31,8 +31,9 @@ final class RecipeVideoRepository {
     }
 
     /// True when the user has deliberately saved a video for this dish, as opposed
-    /// to the server having cached a top pick against the slot. Only the former
-    /// earns the "🎥 RECIPE VIDEO" stamp.
+    /// to the server having cached a top pick against the slot. The distinction is
+    /// what the meal detail page keys on: a saved pick is shown as it stands, while
+    /// anything else is a starting point to search past.
     func hasSavedPick(for mealName: String) -> Bool {
         RecipeVideoKeys.matchSavedVideo(mealName: mealName, videoURLs: videoURLs) != nil
     }

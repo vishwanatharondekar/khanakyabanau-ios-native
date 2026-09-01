@@ -175,6 +175,10 @@ struct PrepStepRow: View {
 /// Never shown when notifications are already allowed, and never at cold start:
 /// iOS gives one shot at the system prompt, so it is only asked for at a moment
 /// when the value is obvious — right beside tonight's prep list.
+///
+/// Nor before the permission has actually been read: an unread status is
+/// `.notDetermined`, and rendering off that asks a user who allowed notifications
+/// long ago to allow them again.
 struct NotificationOptIn: View {
     @Environment(\.app) private var env
     @State private var isDismissed = false
@@ -183,7 +187,7 @@ struct NotificationOptIn: View {
         // Not gated on Firebase: with or without push configured, granting
         // permission is what makes the evening reminder arrive, because the app
         // schedules it locally from the plan it already has.
-        if !isDismissed, !env.push.areNotificationsEnabled {
+        if !isDismissed, env.push.hasResolvedAuthorization, !env.push.areNotificationsEnabled {
             HStack(spacing: 10) {
                 Text("Get reminded this evening?")
                     .kkbFont(.bodyMedium)
