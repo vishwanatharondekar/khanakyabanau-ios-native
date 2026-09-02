@@ -4,8 +4,8 @@
 #
 # Bumps MARKETING_VERSION and CURRENT_PROJECT_VERSION in project.yml, regenerates
 # the Xcode project, archives Release, exports an App Store .ipa, uploads it to
-# TestFlight, then commits the version bump and pushes it to the current branch's
-# remote.
+# TestFlight, then commits the version bump, tags it and pushes both to the
+# current branch's remote.
 #
 # With no version flags, CURRENT_PROJECT_VERSION increments by one and
 # MARKETING_VERSION gets its patch component bumped (1.0.0 -> 1.0.1).
@@ -21,7 +21,8 @@
 #   ./release.sh --no-analytics           # allow a build with no Mixpanel token
 #   ./release.sh --dry-run                # show what would change, don't write or build
 #   ./release.sh --no-upload              # build and export, don't upload
-#   ./release.sh --no-git                 # skip the git commit + push
+#   ./release.sh --no-git                 # skip the git commit, tag and push
+#   ./release.sh --no-tag                 # commit and push, but don't tag
 #   ./release.sh --help
 #
 # For the first submission of 1.0.0, pass --keep-version: a bare run would bump it
@@ -35,6 +36,20 @@
 #     project.yml is the source of truth: the .xcodeproj is generated and gitignored,
 #     so the project is regenerated here rather than trusted.
 #   - xcodegen and Xcode's command line tools are on PATH.
+#
+# Git:
+#   The version bump is committed on its own — anything else dirty in the tree is
+#   left alone — and that commit is tagged `<version>+<build>`, e.g. `1.0.4+13`.
+#
+#   The build number is part of the tag because it is part of the identity: App
+#   Store Connect calls this build "1.0.4 (13)", and the same marketing version can
+#   ship several builds (that is what --keep-version is for), so a bare `1.0.4`
+#   would collide on the second one.
+#
+#   The tag is annotated, and both the branch and the tag are pushed. A tag of that
+#   name already existing is a hard error raised *before* anything is built, which
+#   also makes --dry-run a tag preflight. --no-tag commits and pushes without
+#   tagging; --no-git skips all of it.
 #
 # Signing:
 #   The export needs an Apple Distribution certificate and an App Store provisioning
@@ -94,6 +109,7 @@ DO_EXPORT=1
 REQUIRE_ANALYTICS=1
 DRY_RUN=0
 DO_GIT=1
+DO_TAG=1
 DO_UPLOAD=1
 
 print_help() {
@@ -114,6 +130,7 @@ for arg in "$@"; do
     --dry-run)       DRY_RUN=1 ;;
     --no-upload)     DO_UPLOAD=0 ;;
     --no-git)        DO_GIT=0 ;;
+    --no-tag)        DO_TAG=0 ;;
     -h|--help)       print_help; exit 0 ;;
     *)
       echo "error: unknown argument: $arg" >&2
@@ -337,6 +354,24 @@ ARCHIVE_PATH="$OUT_DIR/$SCHEME-$NEXT_VERSION-$NEXT_BUILD.xcarchive"
 EXPORT_PATH="$OUT_DIR/$SCHEME-$NEXT_VERSION-$NEXT_BUILD"
 IPA_PATH="$EXPORT_PATH/$SCHEME.ipa"
 
+# ---- release tag ------------------------------------------------------------
+#
+# Resolved and checked here, before the plan is printed, so a name clash costs a
+# second rather than a five-minute archive — the same reason the App Store Connect
+# credential is resolved this early.
+
+TAG="${NEXT_VERSION}+${NEXT_BUILD}"
+
+if [[ $DO_GIT -eq 1 && $DO_TAG -eq 1 ]] \
+   && git -C "$SCRIPT_DIR" rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+  echo "error: tag $TAG already exists, on $(git -C "$SCRIPT_DIR" rev-parse --short "refs/tags/$TAG")." >&2
+  echo "       Build numbers are spent on upload, so rerun with" >&2
+  echo "       --build=$((NEXT_BUILD + 1)) rather than reusing this one, or pass" >&2
+  echo "       --no-tag to release without tagging. Moving a tag that has already" >&2
+  echo "       been pushed changes what everyone else has fetched." >&2
+  exit 2
+fi
+
 # ---- print plan -------------------------------------------------------------
 
 echo "=== release plan ==="
@@ -358,7 +393,11 @@ else
 fi
 echo "  testflight:  $UPLOAD_SOURCE"
 if [[ $DO_GIT -eq 1 ]]; then
-  echo "  git:         commit version bump and push"
+  if [[ $DO_TAG -eq 1 ]]; then
+    echo "  git:         commit version bump, tag $TAG, push both"
+  else
+    echo "  git:         commit version bump and push (untagged — --no-tag)"
+  fi
 else
   echo "  git:         (skipped — --no-git)"
 fi
@@ -369,14 +408,14 @@ if [[ $DRY_RUN -eq 1 ]]; then
   exit 0
 fi
 
-# ---- git commit + push ------------------------------------------------------
+# ---- git commit + tag + push ------------------------------------------------
 #
 # Commits only the version bump in project.yml (other staged or dirty files are
-# left untouched) and pushes the current branch.
+# left untouched), tags that commit, and pushes the branch and the tag.
 
-git_commit_and_push() {
+git_commit_tag_and_push() {
   if [[ $DO_GIT -eq 0 ]]; then
-    echo "skipped git commit + push (--no-git)."
+    echo "skipped git commit, tag and push (--no-git)."
     return 0
   fi
 
@@ -388,6 +427,15 @@ git_commit_and_push() {
       -- "$PROJECT_YML"
   fi
 
+  # Annotated rather than lightweight: it carries who cut the release and when,
+  # and `git tag -n` then reads as a release list. Tagged after the commit, so it
+  # lands on the commit that carries the bump.
+  if [[ $DO_TAG -eq 1 ]]; then
+    git -C "$SCRIPT_DIR" tag -a "$TAG" \
+      -m "Khana Kya Banau iOS ${NEXT_VERSION} (build ${NEXT_BUILD})"
+    echo "git: tagged $TAG."
+  fi
+
   local branch
   branch="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD)"
   if git -C "$SCRIPT_DIR" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
@@ -396,6 +444,23 @@ git_commit_and_push() {
     git -C "$SCRIPT_DIR" push -u origin "$branch"
   fi
   echo "git: pushed $branch."
+
+  # Pushed by its full refspec, not with --follow-tags, which would also carry
+  # along every other annotated tag reachable from this branch.
+  if [[ $DO_TAG -eq 1 ]]; then
+    if git -C "$SCRIPT_DIR" push origin "refs/tags/$TAG"; then
+      echo "git: pushed tag $TAG."
+    else
+      echo "" >&2
+      echo "error: the tag push failed. $TAG exists locally and the branch is already" >&2
+      echo "       pushed, so the release itself is intact — only the tag is missing" >&2
+      echo "       on origin. The usual cause is a tag of that name pushed from" >&2
+      echo "       another machine. Compare the two before forcing anything:" >&2
+      echo "         git ls-remote --tags origin refs/tags/$TAG" >&2
+      echo "         git rev-parse $TAG" >&2
+      return 1
+    fi
+  fi
 }
 
 # ---- write versions atomically ---------------------------------------------
@@ -441,7 +506,7 @@ echo "updated: $PROJECT_YML"
 
 if [[ $DO_BUILD -eq 0 ]]; then
   echo "skipped build (--no-build). version bump written to project.yml."
-  git_commit_and_push
+  git_commit_tag_and_push
   exit 0
 fi
 
@@ -579,4 +644,4 @@ if [[ $DO_EXPORT -eq 1 ]]; then
 fi
 echo "======================"
 
-git_commit_and_push
+git_commit_tag_and_push
