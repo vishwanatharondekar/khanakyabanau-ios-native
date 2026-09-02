@@ -69,6 +69,38 @@ extension View {
     }
 }
 
+/// A full-bleed band of fixed height with `content` drawn into it and anything
+/// that does not fit cropped away — the shape of the dish photograph at the top
+/// of the meal-detail page.
+///
+/// `content` is an `.overlay` rather than the sized view itself because an
+/// overlay is sized by what it decorates and so can never push it wider. That is
+/// the whole point of this type. `scaledToFill` reports the size that *covers*
+/// what it was offered, so a photo wider than `bandWidth / height` gets scaled to
+/// the band's height instead and hands back `height × aspect` — on a 393pt phone
+/// a 280pt band and a 1600×966 photo came to 464pt.
+///
+/// Sizing the photograph itself let that number escape: a fixed `frame(height:)`
+/// adopts its child's width when it is given no width of its own,
+/// `frame(maxWidth: .infinity)` floors at the child's width rather than clamping
+/// down to what was offered, and `clipped()` trims the drawing but never the
+/// layout. The enclosing `VStack` then laid every section of the meal-detail page
+/// out at 464pt, and the vertical `ScrollView` — which does not clip sideways —
+/// centred the lot, leaving the page hanging 35pt off each edge of the screen for
+/// the dishes whose photo happened to be wide. Guarded by `MealDetailLayoutTests`.
+struct KkbFullBleedBand<Content: View>: View {
+    var height: CGFloat
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        Color.clear
+            .frame(height: height)
+            .frame(maxWidth: .infinity)
+            .overlay { content }
+            .clipped()
+    }
+}
+
 /// The product's signature card: cream stock, a hairline terracotta rule and a
 /// soft paper shadow. Everything that looks like a card in this app is one of these.
 struct PaperCard<Content: View>: View {

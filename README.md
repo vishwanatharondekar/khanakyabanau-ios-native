@@ -23,10 +23,11 @@ xcodebuild -scheme KhanaKyaBanau \
 cd KhanaKit && swift test     # pure-logic suite, no iOS SDK required
 ```
 
-**298 tests, all green:** 225 in `KhanaKit` (codec, week maths, shopping scope,
-prep rules, API parsing), 59 app unit tests (PDF rendering incl. Indic scripts,
-palette/appearance, shopping-list state, auth routing, prep reminders, first-week
-seeding) and 14 UI journeys driven against the **production** backend.
+**304 tests, all green:** 227 in `KhanaKit` (codec, week maths, shopping scope,
+prep rules, API parsing), 63 app unit tests (PDF rendering incl. Indic scripts,
+palette/appearance, meal-detail layout, shopping-list state, auth routing, prep
+reminders, first-week seeding) and 14 UI journeys driven against the
+**production** backend.
 
 Two notes on the UI tests: they create real guest accounts and consume a guest's
 three lifetime AI/shopping allowances, so don't loop them needlessly; and

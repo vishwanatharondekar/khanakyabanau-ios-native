@@ -76,7 +76,10 @@ struct MealDetailView: View {
 
     private func hero(section: DaySection, meal: Meal, showCalories: Bool) -> some View {
         ZStack(alignment: .bottomLeading) {
-            Group {
+            // The band owns the size and crops the photo into it. Framing the
+            // photo itself let a wide one report a width larger than the screen
+            // and take the whole page with it — see `KkbFullBleedBand`.
+            KkbFullBleedBand(height: 280) {
                 if let imageUrl = meal.imageUrl, let url = URL(string: imageUrl) {
                     AsyncImage(url: url) { image in
                         image.resizable().scaledToFill()
@@ -95,9 +98,6 @@ struct MealDetailView: View {
                     )
                 }
             }
-            .frame(height: 280)
-            .frame(maxWidth: .infinity)
-            .clipped()
 
             LinearGradient(
                 colors: [
