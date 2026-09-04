@@ -36,6 +36,9 @@ struct MealDetailView: View {
         }
         .kkbPageGround()
         .navigationBarBackButtonHidden()
+        // iOS only honours a back-swipe from the left screen edge, and the thing
+        // that invites one here is the full-bleed photo nowhere near it.
+        .kkbBackSwipe { dismiss() }
         .kkbToast($toast)
         .task {
             await model.loadIfNeeded()
