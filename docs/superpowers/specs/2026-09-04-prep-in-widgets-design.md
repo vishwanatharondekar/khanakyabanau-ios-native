@@ -116,7 +116,7 @@ Dinner is nominally 20:00, so an 8-hour soak has to start at 12:00.
 
 | Now | Step | Banner |
 |---|---|---|
-| 09:30 | soak chana, 8h, today's dinner | *(nothing — 12:00 is beyond the 3h horizon)* |
+| 08:00 | soak chana, 8h, today's dinner | *(nothing — 12:00 is four hours off, beyond the 3h horizon)* |
 | 11:00 | soak chana, 8h, today's dinner | `⏳ 12:00 · Soak chana overnight` |
 | 13:00 | soak chana, 8h, today's dinner | `⏳ Start now · Soak chana overnight` |
 | 21:00 | soak chana, 8h, today's dinner | *(nothing — dinner has passed)* |
