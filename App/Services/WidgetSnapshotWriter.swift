@@ -22,6 +22,18 @@ final class WidgetSnapshotWriter {
     private let reloadTimelines: () -> Void
     private let isAuthenticated: () -> Bool
 
+    /// Re-entrancy guard.
+    ///
+    /// `rebuild()` loads weeks through `MealRepository`, and that is the very
+    /// thing whose change hook triggers a rebuild — so without this the writer
+    /// re-triggers itself forever, hammering the API from a background Task with
+    /// nothing on screen to show for it.
+    ///
+    /// A plain flag rather than a queue: the rebuild reads whatever is current
+    /// when it runs, so a change arriving mid-rebuild is either already included
+    /// or will arrive with the next hook. There is nothing to remember.
+    private var isRebuilding = false
+
     /// Matches Android's widget thumbnail budget. Anything larger is wasted on a
     /// 72pt row and costs shared-container space that nothing ever reclaims.
     private static let thumbnailPixels: CGFloat = 256
@@ -46,7 +58,9 @@ final class WidgetSnapshotWriter {
     /// showing slightly old meals; surfacing that to someone who is in the middle
     /// of editing their week would be noise about a screen they are not looking at.
     func rebuild() async {
-        guard let container else { return }
+        guard let container, !isRebuilding else { return }
+        isRebuilding = true
+        defer { isRebuilding = false }
 
         guard isAuthenticated() else {
             // Explicitly publish the signed-out state rather than leaving the old

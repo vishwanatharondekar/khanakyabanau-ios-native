@@ -106,7 +106,18 @@ struct WidgetDayView: View {
 
     @ViewBuilder
     private var content: some View {
-        if !entry.isAuthenticated || entry.today == nil {
+        if entry.container == nil {
+            // Not the user's problem and not fixable by tapping: the App Group is
+            // missing, so the app and the extension are not sharing a container
+            // at all. Shipping copy stays an invitation because a user can do
+            // nothing either way, but a developer should not have to guess —
+            // this exact state cost an afternoon once.
+            #if DEBUG
+                WidgetShell(message: "No App Group — check KKB_WIDGET_ENTITLEMENTS", emphasis: true)
+            #else
+                WidgetShell(message: "Tap to set up", emphasis: true)
+            #endif
+        } else if !entry.isAuthenticated || entry.today == nil {
             WidgetShell(message: "Tap to set up", emphasis: true)
         } else if let today = entry.today, !today.hasAnyMeal,
                   entry.tomorrow?.hasAnyMeal != true {
