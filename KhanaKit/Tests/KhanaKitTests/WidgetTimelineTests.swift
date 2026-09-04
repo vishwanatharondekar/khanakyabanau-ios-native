@@ -74,7 +74,12 @@ final class WidgetTimelineTests: XCTestCase {
             calendar: calendar
         )
 
-        XCTAssertEqual(dates, [now, date("2026-09-05T00:00:00+05:30")])
+        // 17:00 is the pivot, which `entryDates` adds itself.
+        XCTAssertEqual(dates, [
+            now,
+            date("2026-09-04T17:00:00+05:30"),
+            date("2026-09-05T00:00:00+05:30"),
+        ])
     }
 
     func testDuplicateBoundariesCollapse() {
@@ -87,7 +92,11 @@ final class WidgetTimelineTests: XCTestCase {
             calendar: calendar
         )
 
-        XCTAssertEqual(dates, [now, noon, date("2026-09-05T00:00:00+05:30")])
+        XCTAssertEqual(dates, [
+            now, noon,
+            date("2026-09-04T17:00:00+05:30"),
+            date("2026-09-05T00:00:00+05:30"),
+        ])
     }
 
     /// The midnight entry must survive the cap; without it the widget freezes on
@@ -106,5 +115,77 @@ final class WidgetTimelineTests: XCTestCase {
         XCTAssertEqual(dates.count, 4)
         XCTAssertEqual(dates.first, now)
         XCTAssertEqual(dates.last, date("2026-09-05T00:00:00+05:30"))
+    }
+
+    // MARK: - The pivot
+
+    /// The pivot is the entry that turns the widget over to tomorrow, so
+    /// `entryDates` puts it there itself rather than trusting every caller to
+    /// remember. A provider that forgot would leave the widget showing today's
+    /// plan all evening, and nothing would fail loudly.
+    func testThePivotIsAnEntryWithoutTheCallerPassingIt() {
+        let now = date("2026-09-04T09:00:00+05:30")
+
+        let dates = WidgetTimeline.entryDates(startingAt: now, calendar: calendar)
+
+        XCTAssertEqual(dates, [
+            now,
+            date("2026-09-04T17:00:00+05:30"),
+            date("2026-09-05T00:00:00+05:30"),
+        ])
+    }
+
+    func testThePivotIsNotAnEntryOnceItHasPassed() {
+        let now = date("2026-09-04T19:00:00+05:30")
+
+        let dates = WidgetTimeline.entryDates(startingAt: now, calendar: calendar)
+
+        XCTAssertEqual(dates, [now, date("2026-09-05T00:00:00+05:30")])
+    }
+
+    /// A caller passing the pivot as a prep boundary must not double it —
+    /// WidgetKit rejects duplicate entry dates.
+    func testAPivotPassedAsABoundaryIsNotDuplicated() {
+        let now = date("2026-09-04T09:00:00+05:30")
+        let pivot = date("2026-09-04T17:00:00+05:30")
+
+        let dates = WidgetTimeline.entryDates(
+            startingAt: now, extraBoundaries: [pivot], calendar: calendar
+        )
+
+        XCTAssertEqual(dates, [now, pivot, date("2026-09-05T00:00:00+05:30")])
+    }
+
+    /// The failure this guards is silent and total: a day with more prep
+    /// boundaries than the cap would push the pivot off the end, and the widget
+    /// would never turn over to tomorrow.
+    func testTheCapNeverDropsThePivot() {
+        let now = date("2026-09-04T06:00:00+05:30")
+        // Twenty half-hourly boundaries, all before 17:00.
+        let boundaries = (1...20).map { now.addingTimeInterval(Double($0) * 1800) }
+
+        let dates = WidgetTimeline.entryDates(
+            startingAt: now, extraBoundaries: boundaries, calendar: calendar
+        )
+
+        XCTAssertTrue(
+            dates.contains(date("2026-09-04T17:00:00+05:30")),
+            "the pivot was capped away — the widget would show today's plan all evening"
+        )
+        XCTAssertEqual(dates.first, now)
+        XCTAssertEqual(dates.last, date("2026-09-05T00:00:00+05:30"))
+    }
+
+    /// Twelve, per the spec: enough for a heavy prep day, few enough that an
+    /// unusual week cannot generate an unbounded timeline.
+    func testTheDefaultCapIsTwelve() {
+        let now = date("2026-09-04T06:00:00+05:30")
+        let boundaries = (1...30).map { now.addingTimeInterval(Double($0) * 900) }
+
+        let dates = WidgetTimeline.entryDates(
+            startingAt: now, extraBoundaries: boundaries, calendar: calendar
+        )
+
+        XCTAssertEqual(dates.count, 12)
     }
 }
