@@ -35,6 +35,13 @@ three lifetime AI/shopping allowances, so don't loop them needlessly; and
 `xcodegen generate` reports `Executed 0 tests` **and still exits successfully** —
 regenerate first.
 
+A third, which cost a red build once: after adding a **public** symbol to
+`KhanaKit`, `xcodebuild build` can succeed while `xcodebuild test` fails to link
+the widget extension with `Undefined symbol: static KhanaKit.…`. The test action
+reuses a cached copy of the package built before the symbol existed. `xcodebuild
+clean` fixes it, and the error is about staleness rather than anything in the
+code — worth knowing before you go looking for a missing `public`.
+
 ## Installing on your own iPhone
 
 Signing is already configured — `DEVELOPMENT_TEAM: HL88YQFR35` is in `project.yml`,
