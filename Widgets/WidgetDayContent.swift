@@ -49,16 +49,42 @@ struct WidgetDayContent: View {
         }
     }
 
-    /// Small shows the next meal still to come; medium three rows, or four with
-    /// no banner to make room for; large everything. The budget spans sections,
-    /// so an evening small widget shows dinner and then, once dinner has passed,
-    /// tomorrow's breakfast — crossing midnight without any phase logic.
+    /// How many rows the family can hold at Android's row height.
+    ///
+    /// Android's widget is a Glance `LazyColumn`, which **scrolls**. An iOS
+    /// widget cannot, so a row count that overflows does not become a scroll — it
+    /// silently hides food. These are what fits, and `KkbWidget.thumbnail`
+    /// shrinks the row to make the rest fit rather than dropping it.
+    ///
+    /// The budget spans sections, so an evening small widget shows dinner and
+    /// then, once dinner has passed, tomorrow's breakfast — crossing midnight
+    /// with no phase logic of its own.
     private var budget: Int {
         switch family {
         case .systemSmall: return 1
-        case .systemMedium: return banner == nil ? 4 : 3
-        default: return 99
+        // Two rows at Android's minimum row height exactly fills a medium; the
+        // banner costs one of them. Three overflows by half a row.
+        case .systemMedium: return banner == nil ? 2 : 1
+        // Five is every meal type, and they fit — at a shrunk thumbnail.
+        case .systemLarge: return 5
+        default: return 2
         }
+    }
+
+    /// Android's 72dp thumbnail, shrunk only when the rows would not otherwise fit.
+    ///
+    /// Matching Android exactly is the goal and the common case reaches it: three
+    /// meals on a large widget get the full 72. Five do not — 72pt rows need
+    /// 440pt and `.systemLarge` has about 310 — so rather than hiding two meals
+    /// the rows get shorter. A smaller photo is a much smaller loss than a
+    /// missing dinner.
+    private var thumbnailSide: CGFloat {
+        let rows = max(allocated.reduce(0) { $0 + $1.meals.count }, 1)
+        let chrome = KkbWidget.headerHeight
+            + (banner == nil ? 0 : KkbWidget.bannerHeight)
+            + CGFloat(allocated.count - 1) * KkbWidget.headerHeight
+        let perRow = (family.contentHeight - chrome) / CGFloat(rows)
+        return min(KkbWidget.thumbnail, max(36, perRow - KkbWidget.rowPadding * 2))
     }
 
     /// The one clock-aware thing on the widget, and deliberately not per-section:
@@ -77,7 +103,7 @@ struct WidgetDayContent: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: family == .systemSmall ? 6 : 8) {
+        VStack(alignment: .leading, spacing: KkbWidget.rowPadding) {
             if let banner {
                 PrepBanner(due: banner)
             }
@@ -89,7 +115,8 @@ struct WidgetDayContent: View {
                         meal: meal,
                         day: section.day,
                         container: entry.container,
-                        compact: family == .systemSmall
+                        side: thumbnailSide,
+                        showPrepLine: family != .systemSmall
                     )
                 }
             }
@@ -121,10 +148,10 @@ struct WidgetHeader: View {
     var body: some View {
         HStack(spacing: 6) {
             Text(eyebrow)
-                .font(.system(size: 10, weight: .bold))
+                .font(.system(size: KkbWidget.eyebrowSize, weight: .bold))
                 .foregroundStyle(KkbWidget.terracotta600)
             Text(dayLabel)
-                .font(.system(size: 10, weight: .regular))
+                .font(.system(size: KkbWidget.eyebrowSize, weight: .regular))
                 .foregroundStyle(KkbWidget.ink600)
         }
     }
@@ -143,14 +170,14 @@ struct PrepBanner: View {
 
     var body: some View {
         Text("⏳ \(whenText) · \(due.item.step.text)")
-            .font(.system(size: 11, weight: .medium))
+            .font(.system(size: KkbWidget.bannerSize, weight: .medium))
             .foregroundStyle(KkbWidget.ink900)
             .lineLimit(2)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(due.isOverdue ? KkbWidget.terracotta200 : KkbWidget.marigold100)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -158,7 +185,9 @@ struct WidgetMealRow: View {
     let meal: WidgetMeal
     let day: WidgetDay
     let container: WidgetContainer?
-    let compact: Bool
+    /// Android's 72dp, or less when the rows would not otherwise fit.
+    let side: CGFloat
+    let showPrepLine: Bool
 
     /// The dish's own longest-lead step, stated without a clock.
     ///
@@ -185,19 +214,19 @@ struct WidgetMealRow: View {
 
     var body: some View {
         Link(destination: WidgetDeepLink.url(day: day.day, mealType: meal.type)) {
-            HStack(spacing: 8) {
+            HStack(spacing: KkbWidget.thumbnailGap) {
                 thumbnailView
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(meal.type.displayName.uppercased())
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: KkbWidget.eyebrowSize, weight: .bold))
                         .foregroundStyle(KkbWidget.terracotta600)
                     Text(meal.name)
-                        .font(.system(size: compact ? 13 : 12, weight: .medium))
+                        .font(.system(size: KkbWidget.mealNameSize, weight: .medium))
                         .foregroundStyle(KkbWidget.ink900)
                         .lineLimit(2)
-                    if !compact, let prepLine {
+                    if showPrepLine, let prepLine {
                         Text(prepLine)
-                            .font(.system(size: 9))
+                            .font(.system(size: KkbWidget.prepLineSize))
                             .foregroundStyle(KkbWidget.ink600)
                             .lineLimit(1)
                     }
@@ -209,20 +238,35 @@ struct WidgetMealRow: View {
 
     @ViewBuilder
     private var thumbnailView: some View {
-        let side: CGFloat = compact ? 34 : 30
         if let thumbnail {
             thumbnail
                 .resizable()
                 .scaledToFill()
                 .frame(width: side, height: side)
-                .clipShape(RoundedRectangle(cornerRadius: 7))
+                .clipShape(RoundedRectangle(cornerRadius: KkbWidget.thumbnailRadius))
         } else {
             // Same fallback as Android: the meal-type emoji on a cream tile,
             // used when the dish has no photo or the download failed.
-            RoundedRectangle(cornerRadius: 7)
+            RoundedRectangle(cornerRadius: KkbWidget.thumbnailRadius)
                 .fill(KkbWidget.cream100)
                 .frame(width: side, height: side)
                 .overlay(Text(meal.type.emoji).font(.system(size: side * 0.5)))
+        }
+    }
+}
+
+extension WidgetFamily {
+    /// Usable height, after WidgetKit's own container inset.
+    ///
+    /// Approximate on purpose: this decides only how many rows fit and how far
+    /// the thumbnail must shrink, never the layout itself, which SwiftUI does.
+    /// Erring small costs a few points of whitespace; erring large clips a row.
+    var contentHeight: CGFloat {
+        switch self {
+        case .systemSmall: return 120
+        case .systemMedium: return 120
+        case .systemLarge: return 310
+        default: return 120
         }
     }
 }

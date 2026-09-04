@@ -158,6 +158,43 @@ struct WidgetShell: View {
 /// its dependencies too. These must stay in step with the app's cream/terracotta
 /// values and with Android's `WidgetColors`.
 enum KkbWidget {
+
+    // MARK: - Metrics
+    //
+    // Ported one-for-one from Android's `LargeDayContent.kt`, so the two
+    // platforms look like the same product. dp and pt are both
+    // density-independent, so the numbers transfer directly.
+    //
+    // The one place they cannot match: Android's widget is a Glance `LazyColumn`
+    // and **scrolls**, so it can afford 72dp rows however many meals there are.
+    // An iOS widget cannot scroll, so `WidgetDayContent.thumbnailSide` shrinks
+    // the row when the meals would not otherwise fit. A smaller photo is a much
+    // smaller loss than a dinner the user cannot see.
+
+    /// Android: `val size = 72.dp`.
+    static let thumbnail: CGFloat = 72
+    /// Android: `val radius = 14.dp`.
+    static let thumbnailRadius: CGFloat = 14
+    /// Android: `Spacer(GlanceModifier.width(12.dp))`.
+    static let thumbnailGap: CGFloat = 12
+    /// Android: `.padding(vertical = 8.dp)` on the row.
+    static let rowPadding: CGFloat = 8
+
+    /// Android: meal-type label and day label, `fontSize = 10.sp`.
+    static let eyebrowSize: CGFloat = 10
+    /// Android: meal name, `fontSize = 14.sp`.
+    static let mealNameSize: CGFloat = 14
+    /// Android: prep line, `fontSize = 11.sp`.
+    static let prepLineSize: CGFloat = 11
+    /// Android: prep banner, `fontSize = 12.sp`.
+    static let bannerSize: CGFloat = 12
+
+    /// Rough heights used only to decide how many rows fit, never to lay out.
+    static let headerHeight: CGFloat = 16
+    static let bannerHeight: CGFloat = 32
+
+    // MARK: - Colours
+
     static let cream50 = Color(red: 0.996, green: 0.980, blue: 0.953)
     static let cream100 = Color(red: 0.992, green: 0.961, blue: 0.902)
     static let terracotta600 = Color(red: 0.722, green: 0.282, blue: 0.114)
