@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship Today and Tomorrow home screen widgets on iOS, matching the two Glance widgets Android already has.
+**Goal:** Ship one time-aware home screen widget on iOS — today's menu before 17:00, tonight-plus-tomorrow after it — drawing on the same data as the two Glance widgets Android ships.
 
-**Architecture:** The app writes a snapshot (JSON plus 256px thumbnails) into an App Group container whenever a week covering today or tomorrow is loaded or saved; the widget extension always renders that snapshot, and tops it up from the network only when the snapshot is stale and a session token is readable. The snapshot model, its store and the timeline arithmetic live in `KhanaKit` so the app and the extension link one implementation and `swift test` covers them with no simulator.
+**Architecture:** One `StaticConfiguration` whose timeline entries are each stamped with the moment they become valid, so the evening pivot costs one reload rather than a clock read at render time. The app writes a snapshot (JSON plus 256px thumbnails) into an App Group container whenever a week covering today or tomorrow is loaded or saved; the widget extension always renders that snapshot, and tops it up from the network only when the snapshot is stale and a session token is readable. The snapshot model, its store and the timeline arithmetic live in `KhanaKit` so the app and the extension link one implementation and `swift test` covers them with no simulator.
 
 **Tech Stack:** Swift 5.9, iOS 17 floor, SwiftUI, WidgetKit, XCTest, XcodeGen (`project.yml` is the source of truth; the `.xcodeproj` is generated and gitignored).
 
@@ -18,7 +18,9 @@
 - **App Group id:** `group.in.khanakyabanau.app`
 - **Keychain access group:** `in.khanakyabanau.shared`, prefixed at runtime with `AppIdentifierPrefix` read from `Info.plist`. Never hardcode the team id (`HL88YQFR35`) in Swift.
 - **Extension bundle id:** `in.khanakyabanau.app.widgets`
-- **Widget kinds:** `"today"` and `"tomorrow"`. `StaticConfiguration` only — no configuration screen (Android's widget XML documents that even an empty `android:configure` makes the system delete the widget on placement).
+- **One widget kind:** `"menu"`. Never change that string — it is the identity of every widget a user has already placed, and changing it orphans them. `StaticConfiguration` only: the widget picks its own day, so there is nothing left to configure.
+- **The evening pivot is 17:00**, `WidgetPhase.eveningPivotMinutes`, the same value as `nominalMealTimes[.eveningSnack]`. A wall-clock constant, never derived from enabled meal types.
+- **Timeline entries are capped at 12**, dropping the furthest-out prep boundaries first. `now`, the pivot and the next midnight are never dropped.
 - **Copy, verbatim** — these match Android's strings so screenshots and support answers agree:
   - No snapshot or not authenticated: `Tap to set up`
   - Authenticated, no meals: `Open the app to pick meals`
@@ -1071,23 +1073,258 @@ git add KhanaKit/Sources/KhanaKit/Networking/WidgetContainer.swift \
 git commit -m "feat: add the shared-container snapshot store"
 ```
 
-### Task 4: Timeline entry dates
+### Task 4: The evening pivot, remaining meals, and timeline entry dates
 
 **Files:**
+- Create: `KhanaKit/Sources/KhanaKit/Logic/WidgetPhase.swift`
 - Create: `KhanaKit/Sources/KhanaKit/Logic/WidgetTimeline.swift`
+- Test: `KhanaKit/Tests/KhanaKitTests/WidgetPhaseTests.swift`
 - Test: `KhanaKit/Tests/KhanaKitTests/WidgetTimelineTests.swift`
 
 **Interfaces:**
-- Consumes: nothing.
-- Produces: `WidgetTimeline.entryDates(startingAt:extraBoundaries:calendar:limit:) -> [Date]`, `WidgetTimeline.nextMidnight(after:calendar:) -> Date`, `WidgetPhase.eveningPivotMinutes`, `WidgetPhase.pivot(on:calendar:) -> Date`, `WidgetPhase.phase(at:calendar:) -> WidgetPhase.Phase`
+- Consumes: `PrepTonight.nominalMealTimes`, `WidgetMeal` (Task 2).
+- Produces:
+  - `WidgetPhase.eveningPivotMinutes = 17 * 60`
+  - `WidgetPhase.Phase` — `.today`, `.eveningAndTomorrow`
+  - `WidgetPhase.pivotDate(onDayOf: Date, calendar: Calendar) -> Date`
+  - `WidgetPhase.phase(at: Date, calendar: Calendar) -> Phase`
+  - `WidgetPhase.remainingMeals(_ meals: [WidgetMeal], at: Date, calendar: Calendar) -> [WidgetMeal]`
+  - `WidgetTimeline.entryDates(startingAt:extraBoundaries:calendar:limit:) -> [Date]`
+  - `WidgetTimeline.nextMidnight(after:calendar:) -> Date`
 
-The `extraBoundaries` parameter is the seam the prep spec plugs into — it is what will make the "Start now" banner flip on time without spending refresh budget. This task leaves it empty-by-default and does not implement prep.
+- [ ] **Step 1: Write the failing test for the pivot**
 
-`WidgetPhase` belongs here rather than in the extension because it is pure date arithmetic and carries the change this design rests on: one widget that decides for itself whether to show today or tomorrow. The pivot is a boundary fed to `entryDates`, so being time-aware costs exactly one more date.
+Create `KhanaKit/Tests/KhanaKitTests/WidgetPhaseTests.swift`:
 
-**The DST trap:** compute the pivot with `calendar.date(bySettingHour:minute:second:of:)`, never `startOfDay + 17 * 3600`. On a day when the clock jumps, the arithmetic version lands at the wrong wall-clock time or skips the boundary entirely, and the widget silently never switches to tomorrow. There is a test for this below.
+```swift
+import XCTest
+@testable import KhanaKit
 
-- [ ] **Step 1: Write the failing test**
+/// The widget decides its own day: today's plan until 17:00, then tonight plus
+/// tomorrow. These pin the boundary and — the reason this is not one line of
+/// arithmetic — the two days a year when a naive `startOfDay + 17h` is wrong.
+final class WidgetPhaseTests: XCTestCase {
+
+    private func calendar(_ zone: String) -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: zone)!
+        return calendar
+    }
+
+    private func date(_ iso: String, _ calendar: Calendar) -> Date {
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = calendar.timeZone
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: iso)!
+    }
+
+    func testTheMorningShowsToday() {
+        let calendar = calendar("Asia/Kolkata")
+        XCTAssertEqual(
+            WidgetPhase.phase(at: date("2026-09-04T08:00:00+05:30", calendar), calendar: calendar),
+            .today
+        )
+    }
+
+    func testTheBoundaryItselfIsAlreadyEvening() {
+        let calendar = calendar("Asia/Kolkata")
+        XCTAssertEqual(
+            WidgetPhase.phase(at: date("2026-09-04T17:00:00+05:30", calendar), calendar: calendar),
+            .eveningAndTomorrow,
+            "17:00 exactly must resolve one way, and evening is the useful one"
+        )
+    }
+
+    func testOneMinuteBeforeTheBoundaryIsStillToday() {
+        let calendar = calendar("Asia/Kolkata")
+        XCTAssertEqual(
+            WidgetPhase.phase(at: date("2026-09-04T16:59:00+05:30", calendar), calendar: calendar),
+            .today
+        )
+    }
+
+    func testLateEveningIsStillEveningNotTomorrow() {
+        let calendar = calendar("Asia/Kolkata")
+        XCTAssertEqual(
+            WidgetPhase.phase(at: date("2026-09-04T23:59:00+05:30", calendar), calendar: calendar),
+            .eveningAndTomorrow,
+            "the rollover is midnight's job, not the pivot's"
+        )
+    }
+
+    func testJustAfterMidnightIsTodayAgain() {
+        let calendar = calendar("Asia/Kolkata")
+        XCTAssertEqual(
+            WidgetPhase.phase(at: date("2026-09-04T00:01:00+05:30", calendar), calendar: calendar),
+            .today
+        )
+    }
+
+    /// 2026-03-08 is the US spring-forward: 02:00 never happens, so the day is 23
+    /// hours long and `startOfDay + 17 * 3600` lands at **18:00**. That is the bug
+    /// this test exists for.
+    func testThePivotIsSeventeenHundredLocalOnAShortDSTDay() {
+        let calendar = calendar("America/New_York")
+        let pivot = WidgetPhase.pivotDate(
+            onDayOf: date("2026-03-08T09:00:00-05:00", calendar), calendar: calendar
+        )
+
+        XCTAssertEqual(calendar.component(.hour, from: pivot), 17)
+        XCTAssertEqual(calendar.component(.minute, from: pivot), 0)
+    }
+
+    /// 2026-11-01 is the fall-back: the day is 25 hours long, and the same naive
+    /// arithmetic lands at 16:00 instead.
+    func testThePivotIsSeventeenHundredLocalOnALongDSTDay() {
+        let calendar = calendar("America/New_York")
+        let pivot = WidgetPhase.pivotDate(
+            onDayOf: date("2026-11-01T09:00:00-04:00", calendar), calendar: calendar
+        )
+
+        XCTAssertEqual(calendar.component(.hour, from: pivot), 17)
+        XCTAssertEqual(calendar.component(.minute, from: pivot), 0)
+    }
+
+    func testThePivotFallsExactlyOnceOnADSTDay() {
+        let calendar = calendar("America/New_York")
+        let morning = date("2026-03-08T09:00:00-05:00", calendar)
+        let evening = date("2026-03-08T19:00:00-04:00", calendar)
+
+        XCTAssertEqual(WidgetPhase.phase(at: morning, calendar: calendar), .today)
+        XCTAssertEqual(WidgetPhase.phase(at: evening, calendar: calendar), .eveningAndTomorrow)
+    }
+
+    // MARK: - Remaining meals
+
+    private func meals() -> [WidgetMeal] {
+        [MealType.breakfast, .lunch, .eveningSnack, .dinner].map {
+            WidgetMeal(type: $0, name: $0.displayName, calories: nil, thumbnailKey: nil, prep: nil)
+        }
+    }
+
+    func testEverythingRemainsFirstThingInTheMorning() {
+        let calendar = calendar("Asia/Kolkata")
+        XCTAssertEqual(
+            WidgetPhase.remainingMeals(
+                meals(), at: date("2026-09-04T06:00:00+05:30", calendar), calendar: calendar
+            ).map(\.type),
+            [.breakfast, .lunch, .eveningSnack, .dinner]
+        )
+    }
+
+    /// Nominal times: breakfast 08:00, lunch 13:00, evening snack 17:00, dinner
+    /// 20:00. At 19:00 only dinner is still ahead.
+    func testOnlyDinnerRemainsAtSeven() {
+        let calendar = calendar("Asia/Kolkata")
+        XCTAssertEqual(
+            WidgetPhase.remainingMeals(
+                meals(), at: date("2026-09-04T19:00:00+05:30", calendar), calendar: calendar
+            ).map(\.type),
+            [.dinner]
+        )
+    }
+
+    func testNothingRemainsLateAtNight() {
+        let calendar = calendar("Asia/Kolkata")
+        XCTAssertTrue(
+            WidgetPhase.remainingMeals(
+                meals(), at: date("2026-09-04T23:00:00+05:30", calendar), calendar: calendar
+            ).isEmpty
+        )
+    }
+}
+```
+
+- [ ] **Step 2: Run it and watch it fail**
+
+```bash
+cd KhanaKit && swift test --filter WidgetPhaseTests 2>&1 | tail -10
+```
+
+Expected: `error: cannot find 'WidgetPhase' in scope`.
+
+- [ ] **Step 3: Implement the pivot**
+
+Create `KhanaKit/Sources/KhanaKit/Logic/WidgetPhase.swift`:
+
+```swift
+import Foundation
+
+/// Which day the home screen widget should be showing, and what of it is left.
+///
+/// The widget picks its own day rather than making the user place two: a Tomorrow
+/// widget is dead space for most of the day. WidgetKit makes this the cheap
+/// option — a timeline entry is stamped with the moment it becomes valid, so the
+/// pivot is decided when the timeline is built rather than by reading a clock at
+/// render time, and several phase changes a day cost one reload.
+public enum WidgetPhase {
+
+    /// 17:00, the same value as `PrepTonight.nominalMealTimes[.eveningSnack]`.
+    ///
+    /// A wall-clock constant rather than something derived from the user's enabled
+    /// meal types: someone with `eveningSnack` switched off still wants their
+    /// evening to begin at the same time, and deriving it would make the pivot jump
+    /// whenever settings changed.
+    public static let eveningPivotMinutes = 17 * 60
+
+    public enum Phase: Hashable, Sendable {
+        /// Today's plan.
+        case today
+        /// Tonight's remaining meals, then tomorrow's plan.
+        case eveningAndTomorrow
+    }
+
+    /// The pivot instant on the calendar day containing `date`.
+    ///
+    /// Resolved by matching calendar components, not by adding seconds to midnight:
+    /// a DST day is 23 or 25 hours long, so `startOfDay + 17h` lands at 18:00 on a
+    /// spring-forward day and 16:00 on a fall-back one. Twice a year, on the two
+    /// days nobody tests by hand.
+    public static func pivotDate(onDayOf date: Date, calendar: Calendar = .current) -> Date {
+        let startOfDay = calendar.startOfDay(for: date)
+        var components = DateComponents()
+        components.hour = eveningPivotMinutes / 60
+        components.minute = eveningPivotMinutes % 60
+        components.second = 0
+        // `.nextTime` is what covers a day that genuinely has no 17:00: it resolves
+        // to the next instant that exists rather than silently skipping the pivot.
+        return calendar.nextDate(
+            after: startOfDay, matching: components, matchingPolicy: .nextTime
+        ) ?? startOfDay.addingTimeInterval(TimeInterval(eveningPivotMinutes * 60))
+    }
+
+    public static func phase(at date: Date, calendar: Calendar = .current) -> Phase {
+        date >= pivotDate(onDayOf: date, calendar: calendar) ? .eveningAndTomorrow : .today
+    }
+
+    /// The meals whose nominal cook time has not passed yet.
+    ///
+    /// Nominal, not per-user, because `PrepTonight` already made that call for the
+    /// reminders and the widget must not disagree with them. Order is preserved.
+    public static func remainingMeals(
+        _ meals: [WidgetMeal],
+        at date: Date,
+        calendar: Calendar = .current
+    ) -> [WidgetMeal] {
+        let minutesOfDay = calendar.component(.hour, from: date) * 60
+            + calendar.component(.minute, from: date)
+        return meals.filter { meal in
+            guard let mealTime = PrepTonight.nominalMealTimes[meal.type] else { return true }
+            return mealTime > minutesOfDay
+        }
+    }
+}
+```
+
+- [ ] **Step 4: Run it and watch it pass**
+
+```bash
+cd KhanaKit && swift test --filter WidgetPhaseTests 2>&1 | grep -E "Executed|error:"
+```
+
+Expected: 11 tests, 0 failures.
+
+- [ ] **Step 5: Write the failing test for the timeline**
 
 Create `KhanaKit/Tests/KhanaKitTests/WidgetTimelineTests.swift`:
 
@@ -1096,10 +1333,11 @@ import XCTest
 @testable import KhanaKit
 
 /// WidgetKit allows roughly 40–70 timeline reloads a day, so anything that changes
-/// on a clock has to be an *entry date* rather than a reload. These pin the dates.
+/// on a clock has to be an *entry date* rather than a reload. The pivot is one more
+/// date in this list, which is the entire cost of making the widget time-aware.
 final class WidgetTimelineTests: XCTestCase {
 
-    /// Fixed zone: the day boundary is the whole point, and .current would make
+    /// Fixed zone: the day boundary is the whole point, and `.current` would make
     /// this pass or fail depending on where it runs.
     private var calendar: Calendar = {
         var calendar = Calendar(identifier: .gregorian)
@@ -1114,85 +1352,119 @@ final class WidgetTimelineTests: XCTestCase {
         return formatter.date(from: iso)!
     }
 
-    func testTheFirstEntryIsAlwaysNow() {
-        let now = date("2026-09-04T14:30:00+05:30")
+    func testTheFirstEntryIsAlwaysNowAndTheLastIsTheNextMidnight() {
+        let now = date("2026-09-04T20:30:00+05:30")
 
         let dates = WidgetTimeline.entryDates(startingAt: now, calendar: calendar)
 
         XCTAssertEqual(dates.first, now)
-    }
-
-    func testTheLastEntryIsTheNextLocalMidnightSoTheDayRollsOver() {
-        let now = date("2026-09-04T14:30:00+05:30")
-
-        let dates = WidgetTimeline.entryDates(startingAt: now, calendar: calendar)
-
         XCTAssertEqual(dates.last, date("2026-09-05T00:00:00+05:30"))
     }
 
-    func testBoundariesLaterTodayBecomeEntries() {
+    func testThePivotIsAnEntryWhenItIsStillAhead() {
         let now = date("2026-09-04T09:00:00+05:30")
-        let noon = date("2026-09-04T12:00:00+05:30")
-        let evening = date("2026-09-04T18:00:00+05:30")
 
-        let dates = WidgetTimeline.entryDates(
-            startingAt: now, extraBoundaries: [evening, noon], calendar: calendar
-        )
+        let dates = WidgetTimeline.entryDates(startingAt: now, calendar: calendar)
 
-        XCTAssertEqual(dates, [now, noon, evening, date("2026-09-05T00:00:00+05:30")],
-                       "boundaries must be sorted, not taken in the order given")
+        XCTAssertEqual(dates, [
+            now,
+            date("2026-09-04T17:00:00+05:30"),
+            date("2026-09-05T00:00:00+05:30"),
+        ], "without the pivot entry the widget shows today's plan all evening")
     }
 
-    func testBoundariesInThePastAreDropped() {
-        let now = date("2026-09-04T14:00:00+05:30")
+    func testThePivotIsNotAnEntryOnceItHasPassed() {
+        let now = date("2026-09-04T19:00:00+05:30")
 
-        let dates = WidgetTimeline.entryDates(
-            startingAt: now,
-            extraBoundaries: [date("2026-09-04T09:00:00+05:30")],
-            calendar: calendar
-        )
+        let dates = WidgetTimeline.entryDates(startingAt: now, calendar: calendar)
 
         XCTAssertEqual(dates, [now, date("2026-09-05T00:00:00+05:30")])
     }
 
-    func testBoundariesBeyondMidnightAreDropped() {
-        let now = date("2026-09-04T22:00:00+05:30")
+    func testPrepBoundariesLaterTodayBecomeEntriesInOrder() {
+        let now = date("2026-09-04T09:00:00+05:30")
+        let noon = date("2026-09-04T12:00:00+05:30")
+        let three = date("2026-09-04T15:00:00+05:30")
+
+        let dates = WidgetTimeline.entryDates(
+            startingAt: now, extraBoundaries: [three, noon], calendar: calendar
+        )
+
+        XCTAssertEqual(dates, [
+            now, noon, three,
+            date("2026-09-04T17:00:00+05:30"),
+            date("2026-09-05T00:00:00+05:30"),
+        ])
+    }
+
+    func testBoundariesInThePastOrBeyondMidnightAreDropped() {
+        let now = date("2026-09-04T14:00:00+05:30")
 
         let dates = WidgetTimeline.entryDates(
             startingAt: now,
-            extraBoundaries: [date("2026-09-05T09:00:00+05:30")],
+            extraBoundaries: [
+                date("2026-09-04T09:00:00+05:30"),   // already gone
+                date("2026-09-05T09:00:00+05:30"),   // tomorrow's timeline's job
+            ],
             calendar: calendar
         )
 
-        XCTAssertEqual(
-            dates, [now, date("2026-09-05T00:00:00+05:30")],
-            "tomorrow's boundaries belong to tomorrow's timeline, built after the rollover"
-        )
+        XCTAssertEqual(dates, [
+            now,
+            date("2026-09-04T17:00:00+05:30"),
+            date("2026-09-05T00:00:00+05:30"),
+        ])
     }
 
-    func testDuplicateBoundariesCollapse() {
+    func testABoundaryThatCoincidesWithThePivotIsNotDuplicated() {
         let now = date("2026-09-04T09:00:00+05:30")
-        let noon = date("2026-09-04T12:00:00+05:30")
+        let pivot = date("2026-09-04T17:00:00+05:30")
 
         let dates = WidgetTimeline.entryDates(
-            startingAt: now, extraBoundaries: [noon, noon, noon], calendar: calendar
+            startingAt: now, extraBoundaries: [pivot], calendar: calendar
         )
 
-        XCTAssertEqual(dates, [now, noon, date("2026-09-05T00:00:00+05:30")])
+        XCTAssertEqual(dates, [now, pivot, date("2026-09-05T00:00:00+05:30")])
     }
 
-    func testTheEntryCountIsCapped() {
-        let now = date("2026-09-04T00:00:01+05:30")
-        let manyBoundaries = (1...200).map { now.addingTimeInterval(Double($0) * 60) }
+    /// The cap drops the furthest-out prep entries first: those are already visible
+    /// on their own meal's row, whereas now, the pivot and the rollover are not
+    /// recoverable from anywhere else.
+    func testTheCapKeepsNowThePivotAndTheRolloverAndDropsTheFurthestPrep() {
+        let now = date("2026-09-04T06:00:00+05:30")
+        let boundaries = (1...20).map { date("2026-09-04T06:00:00+05:30").addingTimeInterval(Double($0) * 1800) }
 
         let dates = WidgetTimeline.entryDates(
-            startingAt: now, extraBoundaries: manyBoundaries, calendar: calendar, limit: 40
+            startingAt: now, extraBoundaries: boundaries, calendar: calendar, limit: 12
         )
 
-        XCTAssertEqual(dates.count, 40)
+        XCTAssertEqual(dates.count, 12)
         XCTAssertEqual(dates.first, now)
-        XCTAssertEqual(dates.last, date("2026-09-05T00:00:00+05:30"),
-                       "the rollover entry must survive the cap or the widget freezes at midnight")
+        XCTAssertEqual(dates.last, date("2026-09-05T00:00:00+05:30"))
+        XCTAssertTrue(
+            dates.contains(date("2026-09-04T17:00:00+05:30")),
+            "the pivot was dropped by the cap — the widget would never turn over to tomorrow"
+        )
+        XCTAssertEqual(
+            dates[1], date("2026-09-04T06:30:00+05:30"),
+            "the earliest boundaries are the ones to keep"
+        )
+    }
+
+    func testEntriesAreStrictlyIncreasing() {
+        let now = date("2026-09-04T06:00:00+05:30")
+        let dates = WidgetTimeline.entryDates(
+            startingAt: now,
+            extraBoundaries: [
+                date("2026-09-04T12:00:00+05:30"),
+                date("2026-09-04T12:00:00+05:30"),
+                date("2026-09-04T08:00:00+05:30"),
+            ],
+            calendar: calendar
+        )
+
+        XCTAssertEqual(dates, dates.sorted())
+        XCTAssertEqual(Set(dates).count, dates.count, "WidgetKit rejects duplicate entry dates")
     }
 
     func testMidnightExactlyNowStillProducesTheNextOne() {
@@ -1206,15 +1478,15 @@ final class WidgetTimelineTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [ ] **Step 6: Run it and watch it fail**
 
 ```bash
-cd KhanaKit && swift test --filter WidgetTimelineTests 2>&1 | tail -20
+cd KhanaKit && swift test --filter WidgetTimelineTests 2>&1 | tail -10
 ```
 
 Expected: `error: cannot find 'WidgetTimeline' in scope`.
 
-- [ ] **Step 3: Implement it**
+- [ ] **Step 7: Implement the timeline**
 
 Create `KhanaKit/Sources/KhanaKit/Logic/WidgetTimeline.swift`:
 
@@ -1225,34 +1497,47 @@ import Foundation
 ///
 /// WidgetKit allows roughly 40–70 timeline *reloads* a day, but a timeline may
 /// carry many entries, each with its own date. Anything that changes on a clock
-/// therefore belongs here rather than in a reload — which is how this ends up
-/// strictly better than Android's fixed 6-hour `WorkManager` tick.
+/// therefore belongs here rather than in a reload — which is how the evening pivot
+/// costs one reload instead of one per phase, and how this ends up strictly better
+/// than Android's fixed 6-hour `WorkManager` tick.
 public enum WidgetTimeline {
 
-    /// Entries for the rest of today: now, anything the caller knows changes later
-    /// today, and the next local midnight so the day rolls over on its own.
+    /// Entries for the rest of today: now, the evening pivot if it is still ahead,
+    /// anything the caller knows changes later today, and the next local midnight
+    /// so the day rolls over on its own.
     ///
     /// - Parameters:
     ///   - extraBoundaries: moments later today that change what is rendered. The
     ///     prep design uses this for each prep start time still ahead, so the
-    ///     "Start now" banner flips on time. Values outside `(now, midnight]` are
+    ///     "Start now" banner flips on time. Values outside `(now, midnight)` are
     ///     dropped: tomorrow's boundaries belong to the timeline built after the
     ///     rollover.
-    ///   - limit: hard cap on entries. The midnight entry is always kept — without
-    ///     it the widget freezes on yesterday's menu.
+    ///   - limit: hard cap on entries. `now`, the pivot and the rollover are never
+    ///     dropped; the furthest-out boundaries go first, because those are already
+    ///     visible on their own meal's row whereas the other three are not
+    ///     recoverable from anywhere else.
     public static func entryDates(
         startingAt now: Date,
         extraBoundaries: [Date] = [],
         calendar: Calendar = .current,
-        limit: Int = 40
+        limit: Int = 12
     ) -> [Date] {
         let midnight = nextMidnight(after: now, calendar: calendar)
-        let boundaries = Set(extraBoundaries.filter { $0 > now && $0 < midnight })
-            .sorted()
+        let pivot = WidgetPhase.pivotDate(onDayOf: now, calendar: calendar)
+        let pivotIsAhead = pivot > now && pivot < midnight
 
-        // Keep the head and the rollover; drop from the middle when capped.
-        let room = max(0, limit - 2)
-        return [now] + boundaries.prefix(room) + [midnight]
+        // Reserve room for the entries that cannot be reconstructed.
+        let reserved = 2 + (pivotIsAhead ? 1 : 0)
+        let boundaries = Set(extraBoundaries.filter { $0 > now && $0 < midnight })
+            .subtracting(pivotIsAhead ? [pivot] : [])
+            .sorted()
+            .prefix(max(0, limit - reserved))
+
+        var dates = [now] + boundaries
+        if pivotIsAhead { dates.append(pivot) }
+        // Duplicate entry dates are rejected by WidgetKit, and a boundary can land
+        // exactly on the pivot.
+        return Array(Set(dates)).sorted() + [midnight]
     }
 
     /// The next local midnight strictly after `date`.
@@ -1260,34 +1545,29 @@ public enum WidgetTimeline {
         let startOfDay = calendar.startOfDay(for: date)
         // `startOfDay` of a date that *is* midnight returns that same instant, which
         // would schedule an entry for now and leave the widget with nothing after.
-        return calendar.date(byAdding: .day, value: 1, to: startOfDay) ?? date
-            .addingTimeInterval(24 * 3600)
+        return calendar.date(byAdding: .day, value: 1, to: startOfDay)
+            ?? date.addingTimeInterval(24 * 3600)
     }
 }
 ```
 
-- [ ] **Step 4: Run the tests and watch them pass**
+- [ ] **Step 8: Run both suites and watch them pass**
 
 ```bash
-cd KhanaKit && swift test --filter WidgetTimelineTests 2>&1 | grep -E "Executed|error:"
-```
-
-Expected: 8 tests, 0 failures.
-
-- [ ] **Step 5: Run the whole pure suite**
-
-```bash
+cd KhanaKit && swift test --filter "WidgetPhaseTests|WidgetTimelineTests" 2>&1 | grep -E "Executed|error:"
 cd KhanaKit && swift test 2>&1 | grep -E "Executed [0-9]+ tests|error:"
 ```
 
-Expected: 254 tests, 0 failures.
+Expected: 9 timeline tests and 11 phase tests pass; whole suite 266 tests, 0 failures.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add KhanaKit/Sources/KhanaKit/Logic/WidgetTimeline.swift \
+git add KhanaKit/Sources/KhanaKit/Logic/WidgetPhase.swift \
+  KhanaKit/Sources/KhanaKit/Logic/WidgetTimeline.swift \
+  KhanaKit/Tests/KhanaKitTests/WidgetPhaseTests.swift \
   KhanaKit/Tests/KhanaKitTests/WidgetTimelineTests.swift
-git commit -m "feat: add widget timeline entry-date arithmetic"
+git commit -m "feat: add the widget's evening pivot and timeline entry dates"
 ```
 
 ---
@@ -1940,8 +2220,8 @@ git commit -m "feat: write the widget snapshot whenever a visible week changes"
 - Modify: `README.md`
 
 **Interfaces:**
-- Consumes: `WidgetSnapshot`, `WidgetSnapshotStore`, `WidgetContainer` (Tasks 2–3).
-- Produces: `MealsWidget` (kind `"meals"`), `KkbWidget` palette, `WidgetShell(message:emphasis:)`.
+- Consumes: `WidgetSnapshot`, `WidgetSnapshotStore`, `WidgetContainer` (Tasks 2–3), `WidgetPhase`, `WidgetTimeline` (Task 4).
+- Produces: `MenuWidget` (kind `"menu"`), `MenuEntry`, `SnapshotProvider`, `MenuWidgetView`, `KkbWidget` palette, `WidgetShell(message:emphasis:)`.
 
 - [ ] **Step 1: Create `Widgets/Info.plist`**
 
@@ -2058,7 +2338,7 @@ extension Color {
 
 - [ ] **Step 5: Create `Widgets/KhanaKyaBanauWidgets.swift`**
 
-A minimal, placeable widget that reads the snapshot and renders only the shells. Rows come in Task 8; this step's deliverable is "it appears in the gallery and can be placed".
+One widget, whose entries each carry the phase computed from their *own* date — that is what makes the pivot happen without a reload. Rows come in Task 8; this step's deliverable is "it appears in the gallery and can be placed".
 
 ```swift
 import KhanaKit
@@ -2068,40 +2348,36 @@ import WidgetKit
 @main
 struct KhanaKyaBanauWidgetBundle: WidgetBundle {
     var body: some Widget {
-        MealsWidget()
+        MenuWidget()
     }
 }
 
-/// One widget. Which day it shows is decided per timeline entry by
-/// `WidgetPhase`, not by which of two widgets the user placed — see
-/// `2026-09-04-ios-home-screen-widgets-design.md`, "What is shown".
+/// One widget that decides its own day, rather than Android's pair.
 ///
-/// Android ships two receivers sharing `LargeDayContent`; this deliberately
-/// diverges. A Tomorrow widget is dead space for most of the day, and there is
-/// nothing left to configure once the widget picks the day itself — which is
-/// why this stays `StaticConfiguration` rather than becoming an
-/// `AppIntentConfiguration` with a day picker.
-struct MealsWidget: Widget {
-    static let kind = "meals"
+/// A Tomorrow widget is dead space for most of the day, and asking someone to
+/// place two widgets to get one coherent answer is asking them to do the app's
+/// thinking. `StaticConfiguration` because there is nothing left to configure:
+/// if you want the other day, the app is one tap away.
+struct MenuWidget: Widget {
+    /// Never change this string. It is the identity of every widget a user has
+    /// already placed on their home screen; changing it orphans them all.
+    static let kind = "menu"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: Self.kind, provider: SnapshotProvider()) {
-            entry in WidgetDayView(entry: entry)
+        StaticConfiguration(kind: MenuWidget.kind, provider: SnapshotProvider()) { entry in
+            MenuWidgetView(entry: entry)
         }
-        .configurationDisplayName("Meal Plan")
+        .configurationDisplayName("Khana Kya Banau")
         .description("Today's menu, and tomorrow's once the evening comes round.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
 
-struct WidgetDayEntry: TimelineEntry {
+struct MenuEntry: TimelineEntry {
     let date: Date
-    /// Decided per entry from `date`, not from which widget the user placed.
+    /// Computed from `date`, not from "now" — that is the whole trick. Every entry
+    /// knows which phase it represents, so the 17:00 turnover costs no reload.
     let phase: WidgetPhase.Phase
-    /// Both days travel on every entry. The evening phase needs tonight's
-    /// remaining meals *and* tomorrow's plan, and `.systemSmall` walks from one
-    /// into the other to find the next meal across midnight.
-    ///
     /// `nil` means "no readable snapshot" — rendered as the setup shell, never as
     /// an error, because an invitation is more useful than a complaint.
     let today: WidgetDay?
@@ -2112,30 +2388,20 @@ struct WidgetDayEntry: TimelineEntry {
 
 struct SnapshotProvider: TimelineProvider {
 
-    func placeholder(in context: Context) -> WidgetDayEntry {
-        WidgetDayEntry(
-            date: Date(), phase: .day, today: nil, tomorrow: nil,
+    func placeholder(in context: Context) -> MenuEntry {
+        MenuEntry(
+            date: Date(), phase: .today, today: nil, tomorrow: nil,
             isAuthenticated: false, container: nil
         )
     }
 
-    func getSnapshot(in context: Context, completion: @escaping (WidgetDayEntry) -> Void) {
+    func getSnapshot(in context: Context, completion: @escaping (MenuEntry) -> Void) {
         completion(entry(at: Date()))
     }
 
-    func getTimeline(in context: Context, completion: @escaping (Timeline<WidgetDayEntry>) -> Void) {
+    func getTimeline(in context: Context, completion: @escaping (Timeline<MenuEntry>) -> Void) {
         let now = Date()
-        let calendar = Calendar.current
-
-        // The pivot is just another boundary. That is the whole cost of the
-        // widget being time-aware: one extra date, still one reload.
-        let pivot = WidgetPhase.pivot(on: now, calendar: calendar)
-        let dates = WidgetTimeline.entryDates(
-            startingAt: now,
-            extraBoundaries: [pivot],
-            calendar: calendar
-        )
-
+        let dates = WidgetTimeline.entryDates(startingAt: now)
         completion(
             Timeline(
                 entries: dates.map { entry(at: $0) },
@@ -2144,15 +2410,15 @@ struct SnapshotProvider: TimelineProvider {
         )
     }
 
-    private func entry(at date: Date) -> WidgetDayEntry {
+    private func entry(at date: Date) -> MenuEntry {
         let container = WidgetContainer.shared()
         let snapshot = container.flatMap { WidgetSnapshotStore.read(from: $0) }
-        // The snapshot holds today and tomorrow in order, so this indexes rather
-        // than computing a weekday — which keeps it correct across a rollover
-        // without recomputing the calendar here.
-        return WidgetDayEntry(
+        // The snapshot holds today then tomorrow in order, so this picks by index
+        // rather than by weekday — which stays correct across a rollover without
+        // recomputing the calendar here.
+        return MenuEntry(
             date: date,
-            phase: WidgetPhase.phase(at: date, calendar: .current),
+            phase: WidgetPhase.phase(at: date),
             today: snapshot?.days.first,
             tomorrow: snapshot?.days.dropFirst().first,
             isAuthenticated: snapshot?.isAuthenticated ?? false,
@@ -2161,8 +2427,8 @@ struct SnapshotProvider: TimelineProvider {
     }
 }
 
-struct WidgetDayView: View {
-    let entry: WidgetDayEntry
+struct MenuWidgetView: View {
+    let entry: MenuEntry
 
     var body: some View {
         content
@@ -2174,7 +2440,8 @@ struct WidgetDayView: View {
     private var content: some View {
         if !entry.isAuthenticated || entry.today == nil {
             WidgetShell(message: "Tap to set up", emphasis: true)
-        } else if let today = entry.today, !today.hasAnyMeal {
+        } else if let today = entry.today, !today.hasAnyMeal,
+                  entry.tomorrow?.hasAnyMeal != true {
             WidgetShell(message: "Open the app to pick meals", emphasis: false)
         } else {
             // Rows arrive in Task 8.
@@ -2226,14 +2493,14 @@ xcodebuild -scheme KhanaKyaBanau -destination 'platform=iOS Simulator,name=iPhon
   && xcrun simctl launch booted in.khanakyabanau.app
 ```
 
-Then, in the simulator: long-press the home screen → **+** → search "Khana" → both **Today's Menu** and **Tomorrow's Menu** appear → place each in all three sizes. Signed out, every one reads `Tap to set up`.
+Then, in the simulator: long-press the home screen → **+** → search "Khana" → **one** entry named *Khana Kya Banau* appears (not two) → place it in all three sizes. Signed out, every one reads `Tap to set up`.
 
 - [ ] **Step 9: Document the membership requirement in the README**
 
 Add to the "Installing on your own iPhone" section:
 
 ```markdown
-The home screen widgets need App Groups and keychain sharing, which are
+The home screen widget needs App Groups and keychain sharing, which are
 provisioned capabilities a free Apple ID cannot get. For a free-account install,
 set `KKB_ENTITLEMENTS: App/KhanaKyaBanau.entitlements` in `project.yml` and skip
 the widget target — the app itself works unchanged.
@@ -2478,7 +2745,7 @@ enum WidgetRefresh {
 In `Widgets/KhanaKyaBanauWidgets.swift`, make `getTimeline` async-aware:
 
 ```swift
-    func getTimeline(in context: Context, completion: @escaping (Timeline<WidgetDayEntry>) -> Void) {
+    func getTimeline(in context: Context, completion: @escaping (Timeline<MenuEntry>) -> Void) {
         Task {
             // Best-effort, and bounded: the snapshot has already been written by
             // the app, so the worst case is rendering it one refresh out of date.
@@ -2518,17 +2785,17 @@ git add Widgets/WidgetRefresh.swift Widgets/KhanaKyaBanauWidgets.swift \
 git commit -m "feat: let the widget top up a stale snapshot from the network"
 ```
 
-### Task 8: The meal rows and the three families
+### Task 8: The meal rows, the phases, and the three families
 
 **Files:**
 - Create: `Widgets/WidgetDayContent.swift`
 - Modify: `Widgets/KhanaKyaBanauWidgets.swift` (render the new content)
 
 **Interfaces:**
-- Consumes: `WidgetDayEntry`, `KkbWidget`, `WidgetSnapshotStore.thumbnailData`.
-- Produces: `WidgetDayContent(entry:family:)`, `WidgetMealRow(meal:day:container:compact:)`, `WidgetHeader(eyebrow:dayLabel:)`, `WidgetSection`, `allocate(_:budget:)`
+- Consumes: `MenuEntry`, `KkbWidget`, `WidgetSnapshotStore.thumbnailData`, `WidgetPhase.remainingMeals`.
+- Produces: `MenuContent(entry:family:)`, `WidgetMealRow(meal:container:compact:)`, `WidgetHeader(eyebrow:dayLabel:)`, `TomorrowDivider`
 
-This task is layout, so it has no unit test — the deliverable is the manual matrix in Step 4. Keeping it as its own task means a reviewer can reject the layout without rejecting the data path.
+Layout only, so no unit test — the deliverable is the manual matrix in Step 4. Keeping it as its own task means a reviewer can reject the layout without rejecting the data path.
 
 - [ ] **Step 1: Create `Widgets/WidgetDayContent.swift`**
 
@@ -2537,66 +2804,81 @@ import KhanaKit
 import SwiftUI
 import WidgetKit
 
-/// The row list shared by both widget kinds and all three families — the direct
-/// counterpart of Android's `LargeDayContent`.
-struct WidgetDayContent: View {
-    let entry: WidgetDayEntry
+/// The row list — the direct counterpart of Android's `LargeDayContent`, plus the
+/// phase rule Android does not have.
+struct MenuContent: View {
+    let entry: MenuEntry
     let family: WidgetFamily
-
-    /// The body as one or two dated sections.
-    ///
-    /// Day phase is today alone. Evening is tonight's *remaining* meals followed
-    /// by tomorrow — which is the whole point of the merge, and why the divider
-    /// exists. `WidgetPhase.upcoming` does the clock work so this view does none.
-    private var sections: [WidgetSection] {
-        guard let today = entry.today else { return [] }
-        switch entry.phase {
-        case .day:
-            return [WidgetSection(eyebrow: "TODAY", day: today, meals: today.meals)]
-        case .evening:
-            let tonight = WidgetPhase.upcoming(today.meals, at: entry.date, calendar: .current)
-            var out: [WidgetSection] = []
-            if !tonight.isEmpty {
-                out.append(WidgetSection(eyebrow: "TONIGHT", day: today, meals: tonight))
-            }
-            if let tomorrow = entry.tomorrow, tomorrow.hasAnyMeal {
-                out.append(WidgetSection(eyebrow: "TOMORROW", day: tomorrow, meals: tomorrow.meals))
-            }
-            // Everything today is behind us and tomorrow is empty: fall back to
-            // today rather than rendering an empty widget.
-            return out.isEmpty
-                ? [WidgetSection(eyebrow: "TODAY", day: today, meals: today.meals)]
-                : out
-        }
-    }
-
-    /// Small shows the next meal still to come; medium three rows, or four when
-    /// there is no prep banner to make room for; large shows everything. The
-    /// budget spans sections, so an evening small widget naturally shows dinner
-    /// and then, once dinner has passed, tomorrow's breakfast.
-    private var budget: Int {
-        switch family {
-        case .systemSmall: return 1
-        case .systemMedium: return 4
-        default: return .max
-        }
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: family == .systemSmall ? 6 : 10) {
-            ForEach(Array(allocate(sections, budget: budget).enumerated()), id: \.offset) { _, section in
-                WidgetHeader(eyebrow: section.eyebrow, dayLabel: section.day.displayName)
-                ForEach(section.meals, id: \.type) { meal in
-                    WidgetMealRow(
-                        meal: meal,
-                        day: section.day,
-                        container: entry.container,
-                        compact: family == .systemSmall
-                    )
-                }
+            switch family {
+            case .systemSmall:
+                smallBody
+            default:
+                phasedBody
             }
             if family != .systemSmall { Spacer(minLength: 0) }
         }
+    }
+
+    /// Small is inherently rolling: the next meal still to come, whichever day it
+    /// belongs to. That needs no phase logic and crosses midnight on its own.
+    @ViewBuilder
+    private var smallBody: some View {
+        let remaining = WidgetPhase.remainingMeals(written(entry.today), at: entry.date)
+        // After the last meal of the day, roll on to tomorrow's first rather than
+        // showing an empty card for the rest of the evening.
+        let next = remaining.first ?? written(entry.tomorrow).first
+        let isTomorrow = remaining.isEmpty && next != nil
+
+        WidgetHeader(
+            eyebrow: isTomorrow ? "TOMORROW" : "NEXT",
+            dayLabel: (isTomorrow ? entry.tomorrow : entry.today)?.day.displayName ?? ""
+        )
+        if let next {
+            WidgetMealRow(meal: next, container: entry.container, compact: true)
+        } else {
+            WidgetShell(message: "Open the app to pick meals", emphasis: false)
+        }
+    }
+
+    /// Medium and large follow the pivot: today's plan until 17:00, then what is
+    /// left of tonight followed by tomorrow — the moment anyone actually plans
+    /// ahead.
+    @ViewBuilder
+    private var phasedBody: some View {
+        switch entry.phase {
+        case .today:
+            WidgetHeader(eyebrow: "TODAY", dayLabel: entry.today?.day.displayName ?? "")
+            rows(written(entry.today))
+
+        case .eveningAndTomorrow:
+            let tonight = WidgetPhase.remainingMeals(written(entry.today), at: entry.date)
+            if !tonight.isEmpty {
+                WidgetHeader(eyebrow: "TONIGHT", dayLabel: entry.today?.day.displayName ?? "")
+                rows(tonight)
+            }
+            TomorrowDivider(dayLabel: entry.tomorrow?.day.displayName ?? "")
+            rows(written(entry.tomorrow), budget: budget - tonight.count)
+        }
+    }
+
+    /// Medium fits three rows — four when no prep banner is taking a line. Large
+    /// takes everything.
+    private var budget: Int {
+        family == .systemMedium ? 4 : Int.max
+    }
+
+    @ViewBuilder
+    private func rows(_ meals: [WidgetMeal], budget: Int? = nil) -> some View {
+        ForEach(Array(meals.prefix(max(0, budget ?? self.budget))), id: \.type) { meal in
+            WidgetMealRow(meal: meal, container: entry.container, compact: false)
+        }
+    }
+
+    private func written(_ day: WidgetDay?) -> [WidgetMeal] {
+        (day?.meals ?? []).filter { !$0.isEmpty }
     }
 }
 
@@ -2613,6 +2895,27 @@ struct WidgetHeader: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(KkbWidget.ink600)
         }
+    }
+}
+
+/// Separates tonight from tomorrow after the pivot, so the two days never read as
+/// one undifferentiated list.
+struct TomorrowDivider: View {
+    let dayLabel: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("TOMORROW")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(KkbWidget.terracotta600)
+            Text(dayLabel)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(KkbWidget.ink600)
+            Rectangle()
+                .fill(KkbWidget.cream300)
+                .frame(height: 1)
+        }
+        .padding(.top, 2)
     }
 }
 
@@ -2663,6 +2966,10 @@ struct WidgetMealRow: View {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
+                // A *fixed* frame in both axes, so `scaledToFill` cannot report a
+                // size wider than the row. `frame(height:)` plus
+                // `frame(maxWidth: .infinity)` would — that is the bug fixed in
+                // f128dbf, and why `KkbFullBleedBand` exists in the app target.
                 .frame(width: thumbnailSize, height: thumbnailSize)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         } else {
@@ -2677,19 +2984,14 @@ struct WidgetMealRow: View {
 }
 ```
 
-> **Note:** `frame(width:height:)` on the image is a *fixed* frame in both axes, so
-> `scaledToFill` cannot push the row wider than it should be. `frame(height:)` plus
-> `frame(maxWidth: .infinity)` would — that is the bug fixed in `f128dbf`, and
-> `KkbFullBleedBand` exists in the app target because of it.
-
 - [ ] **Step 2: Render it**
 
-In `Widgets/KhanaKyaBanauWidgets.swift`, add the family to `WidgetDayView` and use the new content:
+In `Widgets/KhanaKyaBanauWidgets.swift`, add the family to `MenuWidgetView` and use the new content:
 
 ```swift
-struct WidgetDayView: View {
+struct MenuWidgetView: View {
     @Environment(\.widgetFamily) private var family
-    let entry: WidgetDayEntry
+    let entry: MenuEntry
 
     var body: some View {
         content
@@ -2700,10 +3002,10 @@ struct WidgetDayView: View {
     private var content: some View {
         if !entry.isAuthenticated || entry.today == nil {
             WidgetShell(message: "Tap to set up", emphasis: true)
-        } else if let day = entry.today, !day.hasAnyMeal {
+        } else if entry.today?.hasAnyMeal != true, entry.tomorrow?.hasAnyMeal != true {
             WidgetShell(message: "Open the app to pick meals", emphasis: false)
         } else {
-            WidgetDayContent(entry: entry, family: family)
+            MenuContent(entry: entry, family: family)
         }
     }
 }
@@ -2720,26 +3022,33 @@ Expected: `BUILD SUCCEEDED`.
 
 - [ ] **Step 4: Verify the matrix by hand**
 
-Place both kinds in all three families and check each cell:
+Place the widget in all three families and check each cell. The two phase rows are the ones no test covers.
 
 | Check | Expected |
 |---|---|
-| Small | one row, 44pt thumbnail, no clipping |
-| Medium | three or four rows, 72pt thumbnails, none touching |
-| Large | every enabled meal |
+| Small | one row, 44pt thumbnail, `NEXT` eyebrow, no clipping |
+| Small after the last meal of the day | rolls on to tomorrow's first meal under a `TOMORROW` eyebrow |
+| Medium before 17:00 | `TODAY`, three or four rows, 72pt thumbnails, none touching |
+| Medium after 17:00 | `TONIGHT` with dinner, then the `TOMORROW` divider, then tomorrow's rows |
+| Large after 17:00 | the same, with every enabled meal on both sides of the divider |
+| Set the simulator clock to 16:58 and wait | the widget turns over on its own at 17:00, untouched |
 | A dish with no photo | meal-type emoji on cream, not a gap |
 | A long dish name | wraps to two lines, then truncates |
 | Calories off in Settings | no pill on any family |
-| A day with no meals written | `Open the app to pick meals` |
+| No meals on either day | `Open the app to pick meals` |
 | Signed out | `Tap to set up` |
 | Dark mode | cream ground, legible text (the palette is fixed, not adaptive — same as Android) |
 | StandBy (iPhone on charge, landscape) | renders, not blank |
+
+For the clock check: **Settings → General → Date & Time** in the simulator, or
+`xcrun simctl status_bar booted override --time "16:58"` for the status bar only —
+the former is what actually moves the widget's timeline.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add Widgets/WidgetDayContent.swift Widgets/KhanaKyaBanauWidgets.swift
-git commit -m "feat: render meal rows in the widgets across all three families"
+git commit -m "feat: render the widget's phases and meal rows across all three families"
 ```
 
 ### Task 9: Deep links
@@ -2755,7 +3064,9 @@ git commit -m "feat: render meal rows in the widgets across all three families"
 - Consumes: `AppRoute` is app-side, so the parser returns its own type and the app maps it.
 - Produces:
   - `WidgetMealRow(meal:container:compact:day:)` — this task adds the `day`
-    parameter to the row built in Task 8, so it can build its own meal link
+    parameter to the row built in Task 8, so it can build its own meal link. After
+    the pivot the rows on screen span two days, so the day travels with the row
+    rather than being read from the entry
   - `WidgetDeepLink.scheme = "khanakyabanau"`
   - `WidgetDeepLink.url(day: DayOfWeek?, mealType: MealType?, target: String) -> URL?`
   - `WidgetDeepLink.parse(_ url: URL) -> WidgetDeepLink.Destination?` where `Destination` is `.today`, `.tomorrow`, `.meal(day: DayOfWeek, type: MealType)`
@@ -2927,7 +3238,8 @@ In `WidgetDayContent.body`, add after the `VStack`:
         .widgetURL(WidgetDeepLink.url(target: entry.phase == .evening ? "tomorrow" : "today"))
 ```
 
-and in `WidgetMealRow.body`, wrap the `HStack` content:
+and in `WidgetMealRow.body`, wrap the `HStack` content. The row needs to know
+which day it belongs to, which after the pivot is not always today:
 
 ```swift
         // Per-row links need `Link`; the whole-widget `widgetURL` above is the
