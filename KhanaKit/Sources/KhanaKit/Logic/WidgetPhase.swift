@@ -14,10 +14,12 @@ import Foundation
 public enum WidgetPhase {
 
     public enum Phase: String, Sendable, Hashable {
-        /// Today's plan.
-        case day
-        /// Tonight's remaining meals, then tomorrow's plan.
-        case evening
+        /// What is still to come today.
+        case today
+        /// Today's remainder — usually just dinner — plus a look at tomorrow.
+        case tonight
+        /// Today is cooked. Tomorrow's plan, in full.
+        case tomorrow
     }
 
     /// 17:00 — the same wall-clock time as `nominalMealTimes[.eveningSnack]`.
@@ -43,10 +45,27 @@ public enum WidgetPhase {
         ) ?? calendar.startOfDay(for: date).addingTimeInterval(TimeInterval(eveningPivotMinutes * 60))
     }
 
-    /// Which phase `date` falls in. The pivot instant itself is already evening,
-    /// so the timeline entry scheduled *at* the pivot renders what it exists for.
-    public static func phase(at date: Date, calendar: Calendar = .current) -> Phase {
-        date < pivot(on: date, calendar: calendar) ? .day : .evening
+    /// Which phase `date` falls in, given what is still to be cooked today.
+    ///
+    /// Driven by what remains rather than by the clock alone. A household with
+    /// only breakfast enabled is done by 08:00 and should be looking at tomorrow
+    /// long before any fixed evening hour; one that eats late is still on today
+    /// at 20:00. Asking "is there anything left?" answers both without either
+    /// being a special case.
+    ///
+    /// The pivot only decides when tomorrow becomes worth *previewing* alongside
+    /// what is left. Before it, dinner alone is still today's business; after it,
+    /// the useful question has become what happens next.
+    ///
+    /// The pivot instant itself already counts as tonight, so the timeline entry
+    /// scheduled *at* the pivot renders the thing it exists to show.
+    public static func phase(
+        remainingToday: [MealType],
+        at date: Date,
+        calendar: Calendar = .current
+    ) -> Phase {
+        guard !remainingToday.isEmpty else { return .tomorrow }
+        return date < pivot(on: date, calendar: calendar) ? .today : .tonight
     }
 
     /// The meal types on `date`'s day whose nominal time has not yet passed,

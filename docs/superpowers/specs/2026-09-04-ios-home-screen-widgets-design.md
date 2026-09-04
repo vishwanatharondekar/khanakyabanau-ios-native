@@ -200,14 +200,25 @@ widget long-press and a picker.
 `nominalMealTimes[.eveningSnack]` — lives in `KhanaKit` beside the prep selectors
 so it is shared and testable.
 
-| Phase | Body |
-|---|---|
-| **Before the pivot** | Today's plan |
-| **After the pivot** | Tonight's remaining meals, then tomorrow's plan beneath a `TOMORROW` divider |
+**The body never shows a meal that has already been eaten.** Every phase renders
+`WidgetPhase.upcoming` — today's meals whose nominal time is still ahead — so
+breakfast stops occupying a row at 08:00 and lunch at 13:00. By mid-afternoon the
+widget is about dinner without that being a special case anywhere.
 
-That is the whole rule. Morning gives today's meals, with tonight's prep
-surfacing on its own schedule through the banner; evening gives dinner *and*
-tomorrow, which is the moment anyone actually plans ahead.
+| Phase | When | Body |
+|---|---|---|
+| `.today` | Meals still ahead, before the pivot | What is left of today |
+| `.tonight` | Meals still ahead, after the pivot | What is left of today, then tomorrow beneath a `TOMORROW` divider |
+| `.tomorrow` | **Nothing left to cook today** | Tomorrow's plan, in full |
+
+The phase turns on *what remains*, not on the clock alone. A household with only
+breakfast enabled is finished by 08:00 and should be looking at tomorrow long
+before any fixed evening hour; one that eats late is still on today at 20:00.
+Asking "is there anything left?" answers both without either being special.
+
+The pivot's job is narrower than it first looks: it decides only when tomorrow
+becomes worth *previewing* alongside what is left. Before it, dinner is still
+today's business. After it, the useful question has become what happens next.
 
 A wall-clock constant rather than a value derived from enabled meal types: a user
 with `eveningSnack` disabled still wants the evening to begin at the same time,
@@ -216,6 +227,7 @@ and deriving it would make the pivot jump when someone edits their settings.
 | Family | Content |
 |---|---|
 | `.systemSmall` | the next meal still to come, its name, and its prep line — inherently rolling, so it needs no phase logic and crosses midnight on its own |
+| Every family | a time-aware greeting in place of a static `TODAY` eyebrow, and a warm gradient ground. Both cost no height, which is the only currency a widget has |
 | `.systemMedium` | three meal rows with thumbnails — Android's 4×2 — or four when no prep banner is showing |
 | `.systemLarge` | every enabled meal — Android's 4×4 |
 
@@ -245,6 +257,12 @@ Mirroring Android's copy exactly, so screenshots and support answers match:
 | No snapshot, or not authenticated | "Tap to set up" |
 | Authenticated, no meals written | "Open the app to pick meals" |
 | Snapshot unreadable | "Couldn't load today's plan" |
+| Today cooked, tomorrow unplanned | "That's today sorted · Tap to plan tomorrow" |
+| No App Group (DEBUG only) | names the missing entitlement, rather than impersonating a signed-out user |
+
+The rested state earns its place: it is where every user lands each evening once
+dinner is behind them, and a blank card would read as a broken widget rather than
+a finished day.
 
 ## Deep links
 

@@ -33,8 +33,6 @@ struct MealsWidget: Widget {
 
 struct WidgetDayEntry: TimelineEntry {
     let date: Date
-    /// Decided per entry from `date`, not from which widget the user placed.
-    let phase: WidgetPhase.Phase
     /// Both days travel on every entry: the evening phase needs tonight's
     /// remaining meals *and* tomorrow's plan, and `.systemSmall` walks from one
     /// into the other to find the next meal across midnight.
@@ -51,7 +49,7 @@ struct SnapshotProvider: TimelineProvider {
 
     func placeholder(in context: Context) -> WidgetDayEntry {
         WidgetDayEntry(
-            date: Date(), phase: .day, today: nil, tomorrow: nil,
+            date: Date(), today: nil, tomorrow: nil,
             isAuthenticated: false, container: nil
         )
     }
@@ -85,7 +83,6 @@ struct SnapshotProvider: TimelineProvider {
         // rollover without recomputing a calendar here.
         return WidgetDayEntry(
             date: date,
-            phase: WidgetPhase.phase(at: date, calendar: .current),
             today: snapshot?.days.first,
             tomorrow: snapshot?.days.dropFirst().first,
             isAuthenticated: snapshot?.isAuthenticated ?? false,
@@ -101,7 +98,11 @@ struct WidgetDayView: View {
     var body: some View {
         content
             // Required: without it the widget renders blank in StandBy and on iPad.
-            .containerBackground(KkbWidget.cream50, for: .widget)
+            //
+            // A gradient rather than flat cream. The widget sits among app icons
+            // all day and flat paper reads as an empty box; a warm wash reads as
+            // a kitchen. It costs no height, which is the only currency here.
+            .containerBackground(KkbWidget.warmth, for: .widget)
     }
 
     @ViewBuilder
@@ -139,7 +140,7 @@ struct WidgetShell: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("KHANA KYA BANAU")
-                .font(.system(size: 10, weight: .bold))
+                .font(.system(size: KkbWidget.eyebrowSize, weight: .bold))
                 .foregroundStyle(KkbWidget.terracotta600)
             Spacer(minLength: 0)
             Text(message)
@@ -194,6 +195,17 @@ enum KkbWidget {
     static let bannerHeight: CGFloat = 32
 
     // MARK: - Colours
+
+    /// Cream, warming towards marigold at the bottom-right.
+    ///
+    /// Low-contrast on purpose: it should be felt rather than noticed, and it
+    /// must not fight the meal photographs, which are the actual colour on the
+    /// widget.
+    static let warmth = LinearGradient(
+        colors: [cream50, marigold100.opacity(0.55)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
 
     static let cream50 = Color(red: 0.996, green: 0.980, blue: 0.953)
     static let cream100 = Color(red: 0.992, green: 0.961, blue: 0.902)

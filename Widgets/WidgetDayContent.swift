@@ -16,36 +16,64 @@ struct WidgetDayContent: View {
     let entry: WidgetDayEntry
     let family: WidgetFamily
 
-    /// The body as one or two dated sections.
+    /// Today's meals still ahead. Breakfast stops occupying a row at 08:00 and
+    /// lunch at 13:00, so by mid-afternoon the widget is about dinner.
+    private var remaining: [WidgetMeal] {
+        guard let today = entry.today else { return [] }
+        let ahead = WidgetPhase.upcoming(
+            today.meals.map(\.type), at: entry.date, calendar: .current
+        )
+        return today.meals.filter { ahead.contains($0.type) }
+    }
+
+    /// The body as one or two sections.
     ///
-    /// Day phase is today alone. Evening is tonight's *remaining* meals followed
-    /// by tomorrow — `WidgetPhase.upcoming` does the clock work so this view does
-    /// none.
+    /// Three shapes, and which one appears is decided by what is left to cook
+    /// rather than by the hour alone — see `WidgetPhase.phase`.
+    private var phase: WidgetPhase.Phase {
+        WidgetPhase.phase(
+            remainingToday: remaining.map(\.type), at: entry.date, calendar: .current
+        )
+    }
+
     private var sections: [WidgetSection] {
         guard let today = entry.today else { return [] }
+        let tomorrow = entry.tomorrow
 
-        switch entry.phase {
-        case .day:
-            return [WidgetSection(eyebrow: "TODAY", day: today, meals: today.meals)]
+        switch phase {
+        case .today:
+            return [WidgetSection(eyebrow: greeting, day: today, meals: remaining)]
 
-        case .evening:
-            let stillAhead = WidgetPhase.upcoming(
-                today.meals.map(\.type), at: entry.date, calendar: .current
-            )
-            let tonight = today.meals.filter { stillAhead.contains($0.type) }
-
-            var out: [WidgetSection] = []
-            if !tonight.isEmpty {
-                out.append(WidgetSection(eyebrow: "TONIGHT", day: today, meals: tonight))
+        case .tonight:
+            var out = [WidgetSection(eyebrow: greeting, day: today, meals: remaining)]
+            // A look ahead, not a second menu: tomorrow gets whatever rows are
+            // left after tonight has what it needs, and the budget does the rest.
+            if let tomorrow, tomorrow.hasAnyMeal {
+                out.append(
+                    WidgetSection(eyebrow: "TOMORROW", day: tomorrow, meals: tomorrow.meals)
+                )
             }
-            if let tomorrow = entry.tomorrow, tomorrow.hasAnyMeal {
-                out.append(WidgetSection(eyebrow: "TOMORROW", day: tomorrow, meals: tomorrow.meals))
-            }
-            // Everything today is behind us and tomorrow is empty: fall back to
-            // today rather than rendering nothing at all.
-            return out.isEmpty
-                ? [WidgetSection(eyebrow: "TODAY", day: today, meals: today.meals)]
-                : out
+            return out
+
+        case .tomorrow:
+            // Nothing left to cook today. Showing this morning's breakfast now
+            // would be a widget about the past.
+            guard let tomorrow, tomorrow.hasAnyMeal else { return [] }
+            return [WidgetSection(eyebrow: "TOMORROW", day: tomorrow, meals: tomorrow.meals)]
+        }
+    }
+
+    /// A word that changes through the day.
+    ///
+    /// Free warmth: it replaces the static "TODAY" eyebrow, so it costs no
+    /// height at all, and it is the cheapest thing on the widget that makes it
+    /// feel like it knows what time it is.
+    private var greeting: String {
+        let hour = Calendar.current.component(.hour, from: entry.date)
+        switch hour {
+        case ..<12: return "GOOD MORNING"
+        case ..<16: return "THIS AFTERNOON"
+        default: return "TONIGHT"
         }
     }
 
@@ -108,6 +136,13 @@ struct WidgetDayContent: View {
                 PrepBanner(due: banner)
             }
 
+            // Today is cooked and tomorrow is not planned yet. Reached only in
+            // the evening, and a blank card would read as a broken widget rather
+            // than a finished day.
+            if allocated.isEmpty {
+                RestedState(phase: phase)
+            }
+
             ForEach(allocated) { section in
                 WidgetHeader(eyebrow: section.eyebrow, dayLabel: section.day.day.displayName)
                 ForEach(section.meals, id: \.type) { meal in
@@ -122,7 +157,9 @@ struct WidgetDayContent: View {
             }
             if family != .systemSmall { Spacer(minLength: 0) }
         }
-        .widgetURL(WidgetDeepLink.url(target: entry.phase == .evening ? "tomorrow" : "today"))
+        // Tap where the widget is looking. Once today is cooked, opening the app
+        // on today's finished plan would be answering a question nobody asked.
+        .widgetURL(WidgetDeepLink.url(target: phase == .tomorrow ? "tomorrow" : "today"))
     }
 
     /// Trim to the family's budget, keeping section order and dropping whole
@@ -268,5 +305,29 @@ extension WidgetFamily {
         case .systemLarge: return 310
         default: return 120
         }
+    }
+}
+
+
+/// The end of a day that went to plan.
+///
+/// Warmth is the whole job here: this is the state a user lands on every evening
+/// once dinner is behind them, and "no meals" would be a poor way to describe
+/// having cooked everything you meant to.
+struct RestedState: View {
+    let phase: WidgetPhase.Phase
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("🍽️")
+                .font(.system(size: 22))
+            Text(phase == .tomorrow ? "That's today sorted" : "Nothing planned yet")
+                .font(.system(size: KkbWidget.mealNameSize, weight: .medium))
+                .foregroundStyle(KkbWidget.ink900)
+            Text(phase == .tomorrow ? "Tap to plan tomorrow" : "Tap to pick meals")
+                .font(.system(size: KkbWidget.prepLineSize))
+                .foregroundStyle(KkbWidget.ink600)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

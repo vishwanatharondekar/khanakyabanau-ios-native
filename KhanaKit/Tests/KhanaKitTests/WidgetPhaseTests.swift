@@ -18,41 +18,74 @@ final class WidgetPhaseTests: XCTestCase {
         return formatter.date(from: iso)!
     }
 
-    func testMorningIsTheDayPhase() {
+    private let allTypes: [MealType] = [.breakfast, .lunch, .eveningSnack, .dinner]
+
+    /// Several meals still ahead: the day is in front of you.
+    func testMorningWithMealsAheadIsTheTodayPhase() {
         XCTAssertEqual(
-            WidgetPhase.phase(at: date("2026-09-04T09:00:00+05:30", kolkata), calendar: kolkata),
-            .day
+            WidgetPhase.phase(
+                remainingToday: [.breakfast, .lunch, .dinner],
+                at: date("2026-09-04T09:00:00+05:30", kolkata), calendar: kolkata
+            ),
+            .today
         )
     }
 
-    func testAfterFiveIsTheEveningPhase() {
+    /// Past the pivot with dinner still to come: dinner, plus a look at tomorrow.
+    func testAfterThePivotWithDinnerLeftIsTonight() {
         XCTAssertEqual(
-            WidgetPhase.phase(at: date("2026-09-04T19:30:00+05:30", kolkata), calendar: kolkata),
-            .evening
+            WidgetPhase.phase(
+                remainingToday: [.dinner],
+                at: date("2026-09-04T18:00:00+05:30", kolkata), calendar: kolkata
+            ),
+            .tonight
         )
     }
 
-    /// The boundary itself belongs to the evening, so the entry scheduled *at* the
-    /// pivot renders the thing the pivot exists to show.
-    func testThePivotInstantIsAlreadyEvening() {
+    /// Nothing left to cook: stop showing today at all.
+    ///
+    /// Driven by what remains rather than by the clock, so a household that has
+    /// only breakfast enabled moves on at 08:00 rather than waiting for a dinner
+    /// they were never going to cook.
+    func testNothingLeftTodayIsTheTomorrowPhase() {
         XCTAssertEqual(
-            WidgetPhase.phase(at: date("2026-09-04T17:00:00+05:30", kolkata), calendar: kolkata),
-            .evening
+            WidgetPhase.phase(
+                remainingToday: [],
+                at: date("2026-09-04T21:00:00+05:30", kolkata), calendar: kolkata
+            ),
+            .tomorrow
         )
     }
 
-    func testJustBeforeThePivotIsStillDay() {
+    func testAnEarlyFinisherReachesTomorrowBeforeThePivot() {
         XCTAssertEqual(
-            WidgetPhase.phase(at: date("2026-09-04T16:59:59+05:30", kolkata), calendar: kolkata),
-            .day
+            WidgetPhase.phase(
+                remainingToday: [],
+                at: date("2026-09-04T10:00:00+05:30", kolkata), calendar: kolkata
+            ),
+            .tomorrow
         )
     }
 
-    func testMidnightIsTheDayPhaseAgain() {
+    /// Before the pivot the widget stays on today even when only dinner is left:
+    /// at 14:00 tomorrow is not yet the more useful thing to look at.
+    func testOnlyDinnerLeftBeforeThePivotIsStillToday() {
         XCTAssertEqual(
-            WidgetPhase.phase(at: date("2026-09-05T00:00:00+05:30", kolkata), calendar: kolkata),
-            .day
+            WidgetPhase.phase(
+                remainingToday: [.dinner],
+                at: date("2026-09-04T14:00:00+05:30", kolkata), calendar: kolkata
+            ),
+            .today
         )
+    }
+
+    /// The whole point of the change: by mid-afternoon, breakfast and lunch are
+    /// history and the widget should not be spending rows on them.
+    func testAfternoonCullsBreakfastAndLunch() {
+        let upcoming = WidgetPhase.upcoming(
+            allTypes, at: date("2026-09-04T14:00:00+05:30", kolkata), calendar: kolkata
+        )
+        XCTAssertEqual(upcoming, [.eveningSnack, .dinner])
     }
 
     func testThePivotIsFivePmLocal() {
