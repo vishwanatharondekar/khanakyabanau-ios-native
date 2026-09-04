@@ -21,6 +21,7 @@ final class AppEnvironment {
     let push: PushService
     let prepReminders: PrepReminderScheduler
     let firstWeek: FirstWeekSeeder
+    let widgetSnapshots: WidgetSnapshotWriter
 
     init() {
         let tokenStore = TokenStore()
@@ -45,6 +46,31 @@ final class AppEnvironment {
         self.firstWeek = FirstWeekSeeder(
             ai: self.ai, meals: self.meals, prepReminders: prepReminders
         )
+
+        let meals = self.meals
+        let widgetSnapshots = WidgetSnapshotWriter(
+            settings: settings,
+            loadWeek: { [weak meals] week in
+                guard let meals else { throw APIError.unauthorized }
+                return try await meals.week(week)
+            },
+            isAuthenticated: { TokenStore.currentToken()?.isEmpty == false }
+        )
+        self.widgetSnapshots = widgetSnapshots
+
+        // Rebuild only for a week the widget could actually be showing. Every
+        // other week the app loads — history, whatever the user is browsing —
+        // would otherwise spend a widget reload on data nobody can see.
+        //
+        // The hook fires from inside `week(_:)`, which the writer itself calls,
+        // so this must not recurse: WidgetWindow gates it, and the writer's own
+        // fetch is for a covered week. The Task hop breaks the synchronous cycle.
+        meals.onWeekChanged = { [weak widgetSnapshots] weekStartDate in
+            guard WidgetWindow.covers(weekStartDate: weekStartDate, today: .today()) else { return }
+            Task { @MainActor [weak widgetSnapshots] in
+                await widgetSnapshots?.rebuild()
+            }
+        }
     }
 }
 

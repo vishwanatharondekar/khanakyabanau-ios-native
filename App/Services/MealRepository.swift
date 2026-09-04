@@ -10,6 +10,14 @@ final class MealRepository {
     /// reopening a sheet doesn't re-ask the server about a dish it has no photo for.
     private var imageCache: [String: String?] = [:]
 
+    /// Fired with the week's start date after a week is resolved or saved.
+    ///
+    /// A closure rather than a direct call into the widget writer: this type has
+    /// no business knowing widgets exist, and the composition root is where that
+    /// wiring belongs. Android does the same thing by calling `requestRefresh()`
+    /// from its repository's caller rather than from the repository.
+    var onWeekChanged: ((String) -> Void)?
+
     init(api: APIClient) {
         self.api = api
     }
@@ -18,6 +26,7 @@ final class MealRepository {
     /// 404s and callers don't need a "no plan yet" branch.
     func week(_ weekStartDate: String) async throws -> MealPlan {
         let plan = try await api.send(Endpoints.week(weekStartDate), as: MealPlan.self)
+        onWeekChanged?(weekStartDate)
         return plan.normalizingImageURLs(MealImageURLs.absolutize)
     }
 
@@ -33,6 +42,7 @@ final class MealRepository {
             Endpoints.saveWeek(plan.weekStartDate, SaveMealsRequest(meals: plan.meals)),
             as: MealPlan.self
         )
+        onWeekChanged?(plan.weekStartDate)
         return (response.id, response.userId)
     }
 
