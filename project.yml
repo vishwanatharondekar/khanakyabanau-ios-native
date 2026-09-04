@@ -73,6 +73,9 @@ targets:
         ANALYTICS_ENABLED: "YES"
         # Swap to App/KhanaKyaBanau-Push.entitlements once you have a paid
         # membership and a real GoogleService-Info.plist.
+        # Default stays the empty file so a free Apple ID can still install.
+        # Widgets need App Group + Keychain Sharing, both of which require a paid
+        # membership: KKB_ENTITLEMENTS=App/KhanaKyaBanau-Widgets.entitlements
         KKB_ENTITLEMENTS: App/KhanaKyaBanau.entitlements
         CODE_SIGN_ENTITLEMENTS: "$(KKB_ENTITLEMENTS)"
       configs:

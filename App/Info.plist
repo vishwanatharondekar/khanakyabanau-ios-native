@@ -57,6 +57,15 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!--
+	  The team prefix, needed to build the fully-qualified keychain access group
+	  at runtime: keychain groups are "<prefix>.<group>" and the prefix is not
+	  knowable from source. Absent on a build without the entitlement, which is
+	  how KeychainStore.sharedAccessGroup decides to stay nil.
+	-->
+	<key>AppIdentifierPrefix</key>
+	<string>$(AppIdentifierPrefix)</string>
+
 	<!-- Opening a saved recipe hands off to the YouTube app when it is installed. -->
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
