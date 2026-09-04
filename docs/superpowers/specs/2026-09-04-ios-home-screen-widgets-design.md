@@ -222,7 +222,7 @@ morning snack leaves at 12:00, the evening one at 18:00.
 | Phase | When | Body |
 |---|---|---|
 | `.today` | Meals still ahead, before the pivot | What is left of today |
-| `.tonight` | Meals still ahead, after the pivot | What is left of today, then tomorrow beneath a `TOMORROW` divider |
+| `.tonight` | Meals still ahead, after the pivot | What is left of today, then tomorrow beneath a hairline divider |
 | `.tomorrow` | **Nothing left to cook today** | Tomorrow's plan, in full |
 
 The phase turns on *what remains*, not on the clock alone. A household with only
@@ -258,6 +258,24 @@ Rows are identical to Android's: thumbnail, meal-type label, calorie pill, meal
 name over two lines. Calories follow the app's `showCalories` setting, which
 Android's widget does not currently honour — the app gates on it and the widget
 should not disagree with the app on the same device.
+
+### Tomorrow, divided or glanced
+
+When both days show, a hairline rule separates them. Two stacks of meal rows
+otherwise read as one long list and the `TOMORROW` eyebrow is lost among them.
+It is a hairline rather than a heavier rule or a gap because the widget has no
+height to spend on emphasis — it needs only to say "that was today" clearly
+enough that what follows reads as a new heading.
+
+**On anything smaller than `.systemLarge`, tomorrow is one line rather than
+rows** — `TOMORROW · Rajma · Dosa`. A medium showing both days as row stacks
+needs 145 of its 120 points once the divider and second header are counted.
+Dropping the preview would remove half the reason the evening layout exists, so
+tomorrow instead becomes what it was always described as: a quick snapshot.
+
+The glance costs a row from the medium budget. Between 14:00 and 18:00 an evening
+snack and dinner are both still ahead, and without that the card overruns by
+thirty points.
 
 ### Prep gets its own section when the widget is focused
 

@@ -112,12 +112,17 @@ struct WidgetDayContent: View {
         // space rather than prep. One row is enough: `thumbnailSide` shrinks what
         // is left to fit around the section.
         let focusCost = focusedPrep == nil ? 0 : 1
+        // The glance is a divider and a line — about half a row, but a medium has
+        // no half rows to give. Between 14:00 and 18:00 an evening snack and
+        // dinner are both still ahead, and without this they overrun the card by
+        // thirty points.
+        let glanceCost = tomorrowGlance == nil ? 0 : 1
 
         switch family {
         case .systemSmall: return 1
         // Two rows at Android's minimum row height exactly fills a medium; the
         // banner costs one of them. Three overflows by half a row.
-        case .systemMedium: return max(1, (banner == nil ? 2 : 1) - focusCost)
+        case .systemMedium: return max(1, (banner == nil ? 2 : 1) - focusCost - glanceCost)
         // Five is every meal type, and they fit — at a shrunk thumbnail.
         case .systemLarge: return max(1, 5 - focusCost)
         default: return max(1, 2 - focusCost)
@@ -133,10 +138,14 @@ struct WidgetDayContent: View {
     /// missing dinner.
     private var thumbnailSide: CGFloat {
         let rows = max(allocated.reduce(0) { $0 + $1.meals.count }, 1)
+        // Each extra row section costs its own header and the divider above it.
+        // The glance costs a divider and a single line.
+        let extraSections = CGFloat(max(0, allocated.count - 1))
         let chrome = KkbWidget.headerHeight
             + (banner == nil ? 0 : KkbWidget.bannerHeight)
             + focusHeight
-            + CGFloat(allocated.count - 1) * KkbWidget.headerHeight
+            + extraSections * (KkbWidget.headerHeight + KkbWidget.dividerHeight)
+            + (tomorrowGlance == nil ? 0 : KkbWidget.dividerHeight + KkbWidget.glanceHeight)
         // A slightly smaller floor when the prep section is present. Two-line
         // steps leave a medium widget about three points short of a 36pt
         // thumbnail, and shrinking the photo is a better trade than dropping the
@@ -214,7 +223,13 @@ struct WidgetDayContent: View {
                 RestedState(phase: phase)
             }
 
-            ForEach(allocated) { section in
+            ForEach(Array(allocated.enumerated()), id: \.element.id) { index, section in
+                // Only between sections, never above the first. Reached in one
+                // state — tonight's dinner above tomorrow's plan — where two
+                // stacks of meal rows otherwise read as one long list and the
+                // TOMORROW eyebrow gets lost among them.
+                if index > 0 { SectionDivider() }
+
                 WidgetHeader(eyebrow: section.eyebrow, dayLabel: section.day.day.displayName)
                 ForEach(section.meals, id: \.type) { meal in
                     WidgetMealRow(
@@ -226,11 +241,34 @@ struct WidgetDayContent: View {
                     )
                 }
             }
+            if let tomorrowGlance {
+                SectionDivider()
+                TomorrowGlance(section: tomorrowGlance)
+            }
+
             if family != .systemSmall { Spacer(minLength: 0) }
         }
         // Tap where the widget is looking. Once today is cooked, opening the app
         // on today's finished plan would be answering a question nobody asked.
         .widgetURL(WidgetDeepLink.url(target: phase == .tomorrow ? "tomorrow" : "today"))
+    }
+
+    /// Tomorrow reduced to a single line, for families that cannot afford rows.
+    ///
+    /// A medium widget showing tonight *and* tomorrow as two row stacks needs 145
+    /// of its 120 points once the divider and second header are counted. Rather
+    /// than dropping the preview — which is half the reason the evening layout
+    /// exists — tomorrow becomes what it was always described as: a quick
+    /// snapshot. Large has the room and keeps full rows.
+    private var tomorrowGlance: WidgetSection? {
+        guard family != .systemLarge, sections.count > 1 else { return nil }
+        return sections.last
+    }
+
+    /// Sections that render as rows. The glance, when there is one, is not among
+    /// them — it is a line, and it is rendered separately.
+    private var rowSections: [WidgetSection] {
+        tomorrowGlance == nil ? sections : Array(sections.dropLast())
     }
 
     /// Trim to the family's budget, keeping section order and dropping whole
@@ -239,7 +277,7 @@ struct WidgetDayContent: View {
         var remaining = budget
         var out: [WidgetSection] = []
 
-        for section in sections where remaining > 0 {
+        for section in rowSections where remaining > 0 {
             let take = Array(section.meals.prefix(remaining))
             guard !take.isEmpty else { continue }
             remaining -= take.count
@@ -465,5 +503,49 @@ struct PrepFocusSection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(KkbWidget.marigold100.opacity(0.85))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+
+/// The line between tonight and tomorrow.
+///
+/// A hairline rather than a heavier rule or a gap: the widget has no height to
+/// spend on emphasis, and the row above it is already the last thing being
+/// cooked today. It only needs to say "that was today" clearly enough that the
+/// TOMORROW eyebrow beneath is read as a new heading rather than another meal.
+struct SectionDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(KkbWidget.terracotta600.opacity(0.22))
+            .frame(height: 1)
+            .frame(maxWidth: .infinity)
+    }
+}
+
+
+/// Tomorrow in one line.
+///
+/// What the evening layout was always described as offering — a quick snapshot,
+/// not a second menu. On a medium widget it is also the only version that fits:
+/// two stacks of rows plus a divider and a second header overrun the card.
+struct TomorrowGlance: View {
+    let section: WidgetSection
+
+    private var summary: String {
+        section.meals.map(\.name).joined(separator: " · ")
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text("TOMORROW")
+                .font(.system(size: KkbWidget.eyebrowSize, weight: .bold))
+                .foregroundStyle(KkbWidget.terracotta600)
+                .fixedSize()
+            Text(summary)
+                .font(.system(size: KkbWidget.prepLineSize))
+                .foregroundStyle(KkbWidget.ink600)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
     }
 }

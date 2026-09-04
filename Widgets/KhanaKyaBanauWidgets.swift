@@ -193,6 +193,10 @@ enum KkbWidget {
     /// Rough heights used only to decide how many rows fit, never to lay out.
     static let headerHeight: CGFloat = 16
     static let bannerHeight: CGFloat = 32
+    /// A 1pt rule plus the stack's own gap above it.
+    static let dividerHeight: CGFloat = 9
+    /// One line of 11pt type, plus the stack's gap.
+    static let glanceHeight: CGFloat = 21
 
     // MARK: - Colours
 
