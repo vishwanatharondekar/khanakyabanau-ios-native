@@ -279,9 +279,18 @@ and this is "what does this day need at all", which is a different question.
 **The banner is suppressed whenever this section shows.** Both say the same
 thing, and two urgency notices in a 155pt card is one too many.
 
+Each step gets **two lines**, with its lead time on the right pinned to the first
+line — `firstTextBaseline`, so the time does not drift down when the text wraps.
+"Soak the rajma overnight in plenty of water" is a real step, and truncating it
+to a hyphen loses the half that says what to do. The lead time never wraps and
+never yields width; the step text gives way, because it has a second line to
+give.
+
 Two steps on a large widget, one on a medium: the section plus a header already
-takes 82 of a medium's 120 points, and a second step would leave no room for the
-meal the prep is *for*. A `+N` carries the remainder.
+takes most of a medium's 120 points, and a second step would leave no room for
+the meal the prep is *for*. A `+N` carries the remainder. Two-line steps also
+drop the thumbnail floor from 36 to 30 while the section is showing — shrinking
+the photo is a better trade than dropping the meal.
 
 ### This diverges from Android, deliberately
 

@@ -99,9 +99,12 @@ struct WidgetDayContent: View {
     private var focusStepLimit: Int { family == .systemLarge ? 2 : 1 }
 
     /// Height the focused section takes, for the row arithmetic below.
+    ///
+    /// Each step is now up to two lines, which is roughly 26pt at 11pt type,
+    /// plus a 12pt eyebrow, 3pt gaps and 14pt of padding.
     private var focusHeight: CGFloat {
         guard focusedPrep != nil else { return 0 }
-        return focusStepLimit == 2 ? 66 : 48
+        return focusStepLimit == 2 ? 84 : 55
     }
 
     private var budget: Int {
@@ -134,8 +137,13 @@ struct WidgetDayContent: View {
             + (banner == nil ? 0 : KkbWidget.bannerHeight)
             + focusHeight
             + CGFloat(allocated.count - 1) * KkbWidget.headerHeight
+        // A slightly smaller floor when the prep section is present. Two-line
+        // steps leave a medium widget about three points short of a 36pt
+        // thumbnail, and shrinking the photo is a better trade than dropping the
+        // meal the prep is for.
+        let floor: CGFloat = focusedPrep == nil ? 36 : 30
         let perRow = (family.contentHeight - chrome) / CGFloat(rows)
-        return min(KkbWidget.thumbnail, max(36, perRow - KkbWidget.rowPadding * 2))
+        return min(KkbWidget.thumbnail, max(floor, perRow - KkbWidget.rowPadding * 2))
     }
 
     /// Prep promoted out of a cramped line and into its own block.
@@ -428,17 +436,27 @@ struct PrepFocusSection: View {
             }
 
             ForEach(visible, id: \.id) { item in
+                // firstTextBaseline, so the lead time stays pinned to the step's
+                // *first* line rather than drifting down when the text wraps.
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(item.step.category.emoji)
                         .font(.system(size: KkbWidget.prepLineSize))
                     Text(item.step.text)
                         .font(.system(size: KkbWidget.prepLineSize, weight: .medium))
                         .foregroundStyle(KkbWidget.ink900)
-                        .lineLimit(1)
+                        // Two lines: "Soak the rajma overnight in plenty of
+                        // water" is a real step, and truncating it to a hyphen
+                        // loses the half that says what to do.
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                     Text(formatLeadTime(item.step.leadTimeMinutes))
                         .font(.system(size: KkbWidget.eyebrowSize))
                         .foregroundStyle(KkbWidget.ink600)
+                        // Never wraps and never yields width — the step text is
+                        // what gives way, since it has two lines to give.
+                        .lineLimit(1)
+                        .fixedSize()
                 }
             }
         }
