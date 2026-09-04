@@ -49,6 +49,8 @@ targets:
           - "KhanaKyaBanau.entitlements"
           - "KhanaKyaBanau-Push.entitlements"
     dependencies:
+      - target: KhanaKyaBanauWidgets
+        embed: true
       - package: KhanaKit
         product: KhanaKit
       - package: Firebase
@@ -91,6 +93,25 @@ targets:
     configFiles:
       # Release only: an archive gets the real token, a debug run does not.
       Release: Analytics.xcconfig
+
+  KhanaKyaBanauWidgets:
+    type: app-extension
+    platform: iOS
+    sources: [Widgets]
+    dependencies:
+      - package: KhanaKit
+        product: KhanaKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: in.khanakyabanau.app.widgets
+        PRODUCT_NAME: KhanaKyaBanauWidgets
+        INFOPLIST_FILE: Widgets/Info.plist
+        # Mirrors KKB_ENTITLEMENTS on the app target: the App Group and the
+        # keychain group both need a paid membership, so the default is the
+        # empty file and a widget build opts in explicitly.
+        KKB_WIDGET_ENTITLEMENTS: App/KhanaKyaBanau.entitlements
+        CODE_SIGN_ENTITLEMENTS: "$(KKB_WIDGET_ENTITLEMENTS)"
+        SKIP_INSTALL: "YES"
 
   KhanaKyaBanauUITests:
     type: bundle.ui-testing
