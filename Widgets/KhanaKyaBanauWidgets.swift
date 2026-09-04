@@ -64,13 +64,10 @@ struct SnapshotProvider: TimelineProvider {
         let now = Date()
         let calendar = Calendar.current
 
-        // The pivot is just another boundary. That is the whole cost of the
-        // widget being time-aware: one extra date, still one reload.
-        let dates = WidgetTimeline.entryDates(
-            startingAt: now,
-            extraBoundaries: [WidgetPhase.pivot(on: now, calendar: calendar)],
-            calendar: calendar
-        )
+        // No pivot passed: WidgetTimeline adds it itself, precisely so a provider
+        // cannot forget to. Prep boundaries will arrive here as extraBoundaries
+        // when the banner starts driving them.
+        let dates = WidgetTimeline.entryDates(startingAt: now, calendar: calendar)
 
         completion(
             Timeline(
