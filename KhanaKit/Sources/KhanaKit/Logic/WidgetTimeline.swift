@@ -34,22 +34,25 @@ public enum WidgetTimeline {
         limit: Int = 12
     ) -> [Date] {
         let midnight = nextMidnight(after: now, calendar: calendar)
-        let pivot = WidgetPhase.pivot(on: now, calendar: calendar)
-        let pivotIsAhead = pivot > now && pivot < midnight
 
-        // Reserve room for the entries that cannot be reconstructed from anything
-        // else on screen, then keep the earliest boundaries that still fit.
-        let reserved = 2 + (pivotIsAhead ? 1 : 0)
-        let boundaries = Set(extraBoundaries.filter { $0 > now && $0 < midnight })
-            .subtracting(pivotIsAhead ? [pivot] : [])
+        // Every moment the content changes on its own: each meal leaving the
+        // widget, and the pivot to previewing tomorrow. Non-negotiable — without
+        // them the widget shows breakfast at lunchtime, because nothing here
+        // polls and no reload is coming.
+        let phase = WidgetPhase.boundaries(on: now, calendar: calendar)
+            .filter { $0 > now && $0 < midnight }
+
+        // Reserve room for those and the two ends, then keep the earliest prep
+        // boundaries that still fit.
+        let reserved = 2 + phase.count
+        let prep = Set(extraBoundaries.filter { $0 > now && $0 < midnight })
+            .subtracting(phase)
             .sorted()
             .prefix(max(0, limit - reserved))
 
-        var dates = [now] + boundaries
-        if pivotIsAhead { dates.append(pivot) }
-        // A caller may pass a prep boundary that lands exactly on the pivot, and
-        // WidgetKit rejects duplicate entry dates.
-        return Array(Set(dates)).sorted() + [midnight]
+        // A caller may pass a prep boundary landing exactly on a phase boundary,
+        // and WidgetKit rejects duplicate entry dates.
+        return Array(Set([now] + phase + prep)).sorted() + [midnight]
     }
 
     /// The next local midnight strictly after `date`.

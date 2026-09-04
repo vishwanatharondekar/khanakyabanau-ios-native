@@ -18,79 +18,82 @@ final class WidgetPhaseTests: XCTestCase {
         return formatter.date(from: iso)!
     }
 
-    private let allTypes: [MealType] = [.breakfast, .lunch, .eveningSnack, .dinner]
+    private let allTypes: [MealType] = [.breakfast, .lunch, .dinner]
 
-    /// Several meals still ahead: the day is in front of you.
-    func testMorningWithMealsAheadIsTheTodayPhase() {
-        XCTAssertEqual(
-            WidgetPhase.phase(
-                remainingToday: [.breakfast, .lunch, .dinner],
-                at: date("2026-09-04T09:00:00+05:30", kolkata), calendar: kolkata
-            ),
-            .today
+    private func upcoming(_ hour: Int, _ minute: Int = 0) -> [MealType] {
+        WidgetPhase.upcoming(
+            allTypes,
+            at: date(String(format: "2026-09-04T%02d:%02d:00+05:30", hour, minute), kolkata),
+            calendar: kolkata
         )
     }
 
-    /// Past the pivot with dinner still to come: dinner, plus a look at tomorrow.
-    func testAfterThePivotWithDinnerLeftIsTonight() {
-        XCTAssertEqual(
-            WidgetPhase.phase(
-                remainingToday: [.dinner],
-                at: date("2026-09-04T18:00:00+05:30", kolkata), calendar: kolkata
-            ),
-            .tonight
+    private func phase(_ hour: Int, _ minute: Int = 0) -> WidgetPhase.Phase {
+        let at = date(String(format: "2026-09-04T%02d:%02d:00+05:30", hour, minute), kolkata)
+        return WidgetPhase.phase(
+            remainingToday: WidgetPhase.upcoming(allTypes, at: at, calendar: kolkata),
+            at: at,
+            calendar: kolkata
         )
     }
 
-    /// Nothing left to cook: stop showing today at all.
-    ///
-    /// Driven by what remains rather than by the clock, so a household that has
-    /// only breakfast enabled moves on at 08:00 rather than waiting for a dinner
-    /// they were never going to cook.
-    func testNothingLeftTodayIsTheTomorrowPhase() {
-        XCTAssertEqual(
-            WidgetPhase.phase(
-                remainingToday: [],
-                at: date("2026-09-04T21:00:00+05:30", kolkata), calendar: kolkata
-            ),
-            .tomorrow
-        )
+    // The four windows, pinned at their edges. Each meal survives an hour past
+    // its nominal time, so nobody loses a meal they are running late for.
+
+    func testBeforeNineShowsAllThree() {
+        XCTAssertEqual(upcoming(6), [.breakfast, .lunch, .dinner])
+        XCTAssertEqual(upcoming(8, 59), [.breakfast, .lunch, .dinner])
+        XCTAssertEqual(phase(8, 59), .today)
     }
 
+    func testNineToTwoDropsBreakfast() {
+        XCTAssertEqual(upcoming(9), [.lunch, .dinner])
+        XCTAssertEqual(upcoming(13, 59), [.lunch, .dinner])
+        XCTAssertEqual(phase(9), .today)
+        XCTAssertEqual(phase(13, 59), .today)
+    }
+
+    func testTwoToNineIsDinnerAndTomorrow() {
+        XCTAssertEqual(upcoming(14), [.dinner])
+        XCTAssertEqual(upcoming(20, 59), [.dinner])
+        XCTAssertEqual(phase(14), .tonight)
+        XCTAssertEqual(phase(20, 59), .tonight)
+    }
+
+    func testAfterNineIsTomorrowOnly() {
+        XCTAssertEqual(upcoming(21), [])
+        XCTAssertEqual(phase(21), .tomorrow)
+        XCTAssertEqual(phase(23, 30), .tomorrow)
+    }
+
+    /// A meal is still worth showing while someone might be about to cook it.
+    /// Dropping dinner at its nominal 20:00 would hide it from everyone who eats
+    /// at half past.
+    func testEachMealSurvivesAnHourPastItsNominalTime() {
+        XCTAssertTrue(upcoming(8, 30).contains(.breakfast), "breakfast at 08:30")
+        XCTAssertTrue(upcoming(13, 30).contains(.lunch), "lunch at 13:30")
+        XCTAssertTrue(upcoming(20, 30).contains(.dinner), "dinner at 20:30")
+    }
+
+    /// The snack slots get the same grace, without being named anywhere.
+    func testSnacksFollowTheSameRule() {
+        let types: [MealType] = [.morningSnack, .eveningSnack]
+        let at = date("2026-09-04T12:30:00+05:30", kolkata)
+        // morningSnack is nominally 11:00, so it is gone by 12:00.
+        XCTAssertEqual(WidgetPhase.upcoming(types, at: at, calendar: kolkata), [.eveningSnack])
+    }
+
+    /// Nothing enabled that is still ahead means tomorrow, whatever the hour.
     func testAnEarlyFinisherReachesTomorrowBeforeThePivot() {
+        let at = date("2026-09-04T10:00:00+05:30", kolkata)
         XCTAssertEqual(
-            WidgetPhase.phase(
-                remainingToday: [],
-                at: date("2026-09-04T10:00:00+05:30", kolkata), calendar: kolkata
-            ),
-            .tomorrow
+            WidgetPhase.phase(remainingToday: [], at: at, calendar: kolkata), .tomorrow
         )
     }
 
-    /// Before the pivot the widget stays on today even when only dinner is left:
-    /// at 14:00 tomorrow is not yet the more useful thing to look at.
-    func testOnlyDinnerLeftBeforeThePivotIsStillToday() {
-        XCTAssertEqual(
-            WidgetPhase.phase(
-                remainingToday: [.dinner],
-                at: date("2026-09-04T14:00:00+05:30", kolkata), calendar: kolkata
-            ),
-            .today
-        )
-    }
-
-    /// The whole point of the change: by mid-afternoon, breakfast and lunch are
-    /// history and the widget should not be spending rows on them.
-    func testAfternoonCullsBreakfastAndLunch() {
-        let upcoming = WidgetPhase.upcoming(
-            allTypes, at: date("2026-09-04T14:00:00+05:30", kolkata), calendar: kolkata
-        )
-        XCTAssertEqual(upcoming, [.eveningSnack, .dinner])
-    }
-
-    func testThePivotIsFivePmLocal() {
+    func testThePivotIsTwoPmLocal() {
         let pivot = WidgetPhase.pivot(on: date("2026-09-04T09:00:00+05:30", kolkata), calendar: kolkata)
-        XCTAssertEqual(pivot, date("2026-09-04T17:00:00+05:30", kolkata))
+        XCTAssertEqual(pivot, date("2026-09-04T14:00:00+05:30", kolkata))
     }
 
     /// The bug a naive `startOfDay + 17 * 3600` ships.
@@ -107,11 +110,11 @@ final class WidgetPhaseTests: XCTestCase {
         let pivot = WidgetPhase.pivot(on: morning, calendar: newYork)
 
         let components = newYork.dateComponents([.hour, .minute], from: pivot)
-        XCTAssertEqual(components.hour, 17)
+        XCTAssertEqual(components.hour, 14)
         XCTAssertEqual(components.minute, 0)
 
         // And the arithmetic version really would have been wrong.
-        let naive = newYork.startOfDay(for: morning).addingTimeInterval(17 * 3600)
+        let naive = newYork.startOfDay(for: morning).addingTimeInterval(14 * 3600)
         XCTAssertNotEqual(naive, pivot)
     }
 

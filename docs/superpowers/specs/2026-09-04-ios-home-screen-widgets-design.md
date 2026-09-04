@@ -200,10 +200,24 @@ widget long-press and a picker.
 `nominalMealTimes[.eveningSnack]` — lives in `KhanaKit` beside the prep selectors
 so it is shared and testable.
 
-**The body never shows a meal that has already been eaten.** Every phase renders
-`WidgetPhase.upcoming` — today's meals whose nominal time is still ahead — so
-breakfast stops occupying a row at 08:00 and lunch at 13:00. By mid-afternoon the
-widget is about dinner without that being a special case anywhere.
+**The body never shows a meal that has already been eaten**, and each meal gets
+an hour's grace past its nominal time before it goes. `nominalMealTimes` say when
+a meal is *assumed* to be cooked so prep can be scheduled — not when anyone
+actually cooks. Dropping dinner at 20:00 sharp would hide it from every household
+that eats at half past, so the widget errs towards showing a meal you have
+already eaten rather than hiding one you are about to.
+
+`WidgetPhase.graceMinutes` is 60, which lands the four windows exactly:
+
+| Time | Shown |
+|---|---|
+| Before **09:00** | Breakfast, lunch, dinner |
+| **09:00–14:00** | Lunch and dinner |
+| **14:00–21:00** | Tonight's dinner, and tomorrow |
+| After **21:00** | Tomorrow only |
+
+The two snack slots follow the same rule without being named anywhere: the
+morning snack leaves at 12:00, the evening one at 18:00.
 
 | Phase | When | Body |
 |---|---|---|
@@ -217,8 +231,17 @@ before any fixed evening hour; one that eats late is still on today at 20:00.
 Asking "is there anything left?" answers both without either being special.
 
 The pivot's job is narrower than it first looks: it decides only when tomorrow
-becomes worth *previewing* alongside what is left. Before it, dinner is still
-today's business. After it, the useful question has become what happens next.
+becomes worth *previewing* alongside what is left. It sits at **14:00** — the
+moment lunch leaves, and with it the last reason to be looking at today rather
+than ahead.
+
+Every one of these boundaries has to reach the timeline as an entry date.
+`WidgetPhase.boundaries(on:calendar:)` produces them and `WidgetTimeline` adds
+them itself rather than trusting a caller — nothing here polls, so a widget that
+decided at 08:00 what to show would still be offering breakfast at lunchtime.
+They are also the entries the cap may never drop: losing a prep boundary costs a
+banner that is already legible on its meal's row, but losing a phase boundary
+freezes the widget in a state it can never leave.
 
 A wall-clock constant rather than a value derived from enabled meal types: a user
 with `eveningSnack` disabled still wants the evening to begin at the same time,

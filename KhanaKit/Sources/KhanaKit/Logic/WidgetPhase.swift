@@ -22,13 +22,61 @@ public enum WidgetPhase {
         case tomorrow
     }
 
-    /// 17:00 — the same wall-clock time as `nominalMealTimes[.eveningSnack]`.
+    /// How long a meal stays on the widget past its nominal time.
     ///
-    /// A constant rather than a value derived from the user's enabled meal types:
-    /// someone who has turned the evening snack off still wants their evening to
-    /// begin at the same hour, and deriving it would make the pivot jump around
-    /// when they edit their settings.
-    public static let eveningPivotMinutes = 17 * 60
+    /// `nominalMealTimes` are when a meal is *assumed* to be cooked, not when
+    /// anyone actually cooks it, and they exist to schedule prep rather than to
+    /// decide what is on screen. Dropping dinner at 20:00 sharp would hide it
+    /// from every household that eats at half past — so each meal is given an
+    /// hour, and the widget errs towards showing a meal you have already eaten
+    /// rather than hiding one you are about to.
+    ///
+    /// One hour lands the three main meals exactly on the intended boundaries:
+    ///
+    /// | Meal | Nominal | Leaves the widget |
+    /// |---|---|---|
+    /// | Breakfast | 08:00 | **09:00** |
+    /// | Lunch | 13:00 | **14:00** |
+    /// | Dinner | 20:00 | **21:00** |
+    ///
+    /// The two snack slots follow the same rule without being named: the morning
+    /// snack goes at 12:00, the evening one at 18:00.
+    public static let graceMinutes = 60
+
+    /// 14:00 — the moment lunch leaves, and with it the last reason to be
+    /// looking at today rather than ahead.
+    ///
+    /// A constant rather than a value derived from the user's enabled meal types.
+    /// Someone who has turned lunch off still wants their afternoon to begin at
+    /// the same hour, and deriving it would make the pivot jump when they edit
+    /// their settings.
+    public static let eveningPivotMinutes = 14 * 60
+
+    /// When `type` stops being shown, as minutes from midnight.
+    public static func showsUntil(_ type: MealType) -> Int? {
+        PrepTonight.nominalMealTimes[type].map { $0 + graceMinutes }
+    }
+
+    /// Every instant on `date`'s day at which the widget's content changes.
+    ///
+    /// The pivot plus each meal's cutoff — 09:00, 14:00, 18:00, 21:00 and so on.
+    /// These have to reach the timeline as entry dates or the widget simply does
+    /// not update: nothing here polls, and a widget that decided at 08:00 what to
+    /// show would still be offering breakfast at lunchtime.
+    ///
+    /// Times are set on the calendar rather than added as elapsed seconds, so a
+    /// day on which the clock shifts still lands them on the right wall-clock
+    /// hour.
+    public static func boundaries(on date: Date, calendar: Calendar = .current) -> [Date] {
+        let minutes = Set(MealType.allCases.compactMap(showsUntil) + [eveningPivotMinutes])
+
+        return minutes.compactMap { minute in
+            calendar.date(
+                bySettingHour: minute / 60, minute: minute % 60, second: 0, of: date
+            )
+        }
+        .sorted()
+    }
 
     /// The pivot instant on `date`'s local day.
     ///
@@ -68,14 +116,14 @@ public enum WidgetPhase {
         return date < pivot(on: date, calendar: calendar) ? .today : .tonight
     }
 
-    /// The meal types on `date`'s day whose nominal time has not yet passed,
-    /// in chronological order.
+    /// The meal types still worth showing on `date`'s day, in chronological order.
     ///
-    /// Used for the evening phase's "tonight" section, so a widget at 19:00 offers
-    /// dinner rather than reminding you about breakfast. Order comes from the
-    /// nominal times rather than from the caller's array, so it is stable however
-    /// the enabled types were assembled — the same reasoning `PrepAfternoon`
-    /// applies to its own iteration.
+    /// A meal survives `graceMinutes` past its nominal time, so at 14:00 this is
+    /// dinner, and breakfast has not been taking up a row since 09:00.
+    ///
+    /// Order comes from the nominal times rather than from the caller's array, so
+    /// it is stable however the enabled types were assembled — the same reasoning
+    /// `PrepAfternoon` applies to its own iteration.
     public static func upcoming(
         _ types: [MealType],
         at date: Date,
@@ -86,8 +134,11 @@ public enum WidgetPhase {
 
         return types
             .compactMap { type -> (MealType, Int)? in
-                guard let minutes = PrepTonight.nominalMealTimes[type] else { return nil }
-                return minutes > elapsed ? (type, minutes) : nil
+                guard let nominal = PrepTonight.nominalMealTimes[type],
+                      let until = showsUntil(type),
+                      until > elapsed
+                else { return nil }
+                return (type, nominal)
             }
             .sorted { $0.1 < $1.1 }
             .map(\.0)

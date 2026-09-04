@@ -69,12 +69,16 @@ struct WidgetDayContent: View {
     /// height at all, and it is the cheapest thing on the widget that makes it
     /// feel like it knows what time it is.
     private var greeting: String {
-        let hour = Calendar.current.component(.hour, from: entry.date)
-        switch hour {
-        case ..<12: return "GOOD MORNING"
-        case ..<16: return "THIS AFTERNOON"
-        default: return "TONIGHT"
-        }
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: entry.date)
+        let minutes = calendar.dateComponents([.minute], from: start, to: entry.date).minute ?? 0
+
+        // Derived from the same cutoffs that decide the rows, so the words and
+        // the meals can never disagree: while breakfast is still up it is
+        // morning, and once lunch has gone it is tonight.
+        if minutes < WidgetPhase.showsUntil(.breakfast) ?? 0 { return "GOOD MORNING" }
+        if minutes < WidgetPhase.eveningPivotMinutes { return "LATER TODAY" }
+        return "TONIGHT"
     }
 
     /// How many rows the family can hold at Android's row height.
