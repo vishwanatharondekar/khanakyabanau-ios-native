@@ -91,15 +91,33 @@ struct WidgetDayContent: View {
     /// The budget spans sections, so an evening small widget shows dinner and
     /// then, once dinner has passed, tomorrow's breakfast — crossing midnight
     /// with no phase logic of its own.
+    /// How many prep steps the focused section shows.
+    ///
+    /// Two on a large widget, one on a medium — where the section plus a header
+    /// already eats 82 of 120 points and a second step would leave no room for
+    /// the meal it is prep *for*.
+    private var focusStepLimit: Int { family == .systemLarge ? 2 : 1 }
+
+    /// Height the focused section takes, for the row arithmetic below.
+    private var focusHeight: CGFloat {
+        guard focusedPrep != nil else { return 0 }
+        return focusStepLimit == 2 ? 66 : 48
+    }
+
     private var budget: Int {
+        // Prep is why the user is looking in these states, so meals give up the
+        // space rather than prep. One row is enough: `thumbnailSide` shrinks what
+        // is left to fit around the section.
+        let focusCost = focusedPrep == nil ? 0 : 1
+
         switch family {
         case .systemSmall: return 1
         // Two rows at Android's minimum row height exactly fills a medium; the
         // banner costs one of them. Three overflows by half a row.
-        case .systemMedium: return banner == nil ? 2 : 1
+        case .systemMedium: return max(1, (banner == nil ? 2 : 1) - focusCost)
         // Five is every meal type, and they fit — at a shrunk thumbnail.
-        case .systemLarge: return 5
-        default: return 2
+        case .systemLarge: return max(1, 5 - focusCost)
+        default: return max(1, 2 - focusCost)
         }
     }
 
@@ -114,9 +132,39 @@ struct WidgetDayContent: View {
         let rows = max(allocated.reduce(0) { $0 + $1.meals.count }, 1)
         let chrome = KkbWidget.headerHeight
             + (banner == nil ? 0 : KkbWidget.bannerHeight)
+            + focusHeight
             + CGFloat(allocated.count - 1) * KkbWidget.headerHeight
         let perRow = (family.contentHeight - chrome) / CGFloat(rows)
         return min(KkbWidget.thumbnail, max(36, perRow - KkbWidget.rowPadding * 2))
+    }
+
+    /// Prep promoted out of a cramped line and into its own block.
+    ///
+    /// Only when the widget is focused — tomorrow alone, or a single meal left
+    /// tonight. Those are exactly the states with rows to spare, and they are
+    /// also the states where prep is the most useful thing on screen: if you are
+    /// looking at tomorrow at 21:00, what to start *now* matters more than what
+    /// you will eat in fourteen hours.
+    ///
+    /// `nil` in every other state, where the banner covers urgency and the
+    /// per-meal lines cover the rest.
+    private var focusedPrep: (eyebrow: String, items: [PrepTonightItem])? {
+        guard family != .systemSmall else { return nil }
+
+        switch phase {
+        case .tomorrow:
+            guard let tomorrow = entry.tomorrow else { return nil }
+            let items = PrepNow.steps(for: tomorrow.meals, source: .tonight)
+            return items.isEmpty ? nil : ("START TONIGHT", items)
+
+        case .tonight where remaining.count == 1:
+            let items = PrepNow.steps(for: remaining, source: .afternoon)
+            guard !items.isEmpty, let only = remaining.first else { return nil }
+            return ("BEFORE \(only.type.displayName.uppercased())", items)
+
+        case .today, .tonight:
+            return nil
+        }
     }
 
     /// The one clock-aware thing on the widget, and deliberately not per-section:
@@ -124,6 +172,9 @@ struct WidgetDayContent: View {
     /// scoping it to the day on screen would hide the only urgent fact there is.
     private var banner: PrepDue? {
         guard family != .systemSmall else { return nil }
+        // The focused section already says this, in more detail and with more
+        // room. Two urgency notices in a 155pt card is one too many.
+        guard focusedPrep == nil else { return nil }
         guard let today = entry.today else { return nil }
 
         return PrepNow.due(
@@ -138,6 +189,14 @@ struct WidgetDayContent: View {
         VStack(alignment: .leading, spacing: KkbWidget.rowPadding) {
             if let banner {
                 PrepBanner(due: banner)
+            }
+
+            if let focusedPrep {
+                PrepFocusSection(
+                    eyebrow: focusedPrep.eyebrow,
+                    items: focusedPrep.items,
+                    limit: focusStepLimit
+                )
             }
 
             // Today is cooked and tomorrow is not planned yet. Reached only in
@@ -333,5 +392,60 @@ struct RestedState: View {
                 .foregroundStyle(KkbWidget.ink600)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+
+/// Prep, given room to be read.
+///
+/// The per-meal line states a step in nine points under a dish name. This states
+/// it at full size with the hour it has to start, because in the two states that
+/// reach here — tomorrow alone, or one meal left tonight — it is the actionable
+/// thing on the card and the meal is context for it, rather than the other way
+/// round.
+struct PrepFocusSection: View {
+    let eyebrow: String
+    let items: [PrepTonightItem]
+    let limit: Int
+
+    /// Earliest first, so the one shown is the one that has to start soonest —
+    /// and a `+N` says how much is not on screen.
+    private var visible: [PrepTonightItem] {
+        Array(items.sorted { $0.startByMinutes < $1.startByMinutes }.prefix(limit))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(eyebrow)
+                    .font(.system(size: KkbWidget.eyebrowSize, weight: .bold))
+                    .foregroundStyle(KkbWidget.terracotta600)
+                if items.count > visible.count {
+                    Text("+\(items.count - visible.count)")
+                        .font(.system(size: KkbWidget.eyebrowSize))
+                        .foregroundStyle(KkbWidget.ink600)
+                }
+            }
+
+            ForEach(visible, id: \.id) { item in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(item.step.category.emoji)
+                        .font(.system(size: KkbWidget.prepLineSize))
+                    Text(item.step.text)
+                        .font(.system(size: KkbWidget.prepLineSize, weight: .medium))
+                        .foregroundStyle(KkbWidget.ink900)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    Text(formatLeadTime(item.step.leadTimeMinutes))
+                        .font(.system(size: KkbWidget.eyebrowSize))
+                        .foregroundStyle(KkbWidget.ink600)
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(KkbWidget.marigold100.opacity(0.85))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }

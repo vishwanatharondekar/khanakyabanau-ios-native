@@ -77,7 +77,23 @@ public enum PrepNow {
             .sorted { $0.startAt < $1.startAt }
     }
 
-    private enum Source { case afternoon, tonight }
+    /// Which selector's rules to apply.
+    public enum Source: Sendable {
+        /// Today's evening meals — what cannot wait until you start cooking.
+        case afternoon
+        /// Tomorrow's meals — what cannot wait until tomorrow morning.
+        case tonight
+    }
+
+    /// Every advance step for `meals`, urgent or not.
+    ///
+    /// `due` answers "what needs starting in the next three hours"; this answers
+    /// "what does this day need at all". The focused layouts use it: when the
+    /// widget is down to one meal, or to tomorrow alone, prep stops being a line
+    /// under a dish and becomes the thing worth reading.
+    public static func steps(for meals: [WidgetMeal], source: Source) -> [PrepTonightItem] {
+        items(from: meals, source: source)
+    }
 
     /// Rebuild a `DayMeals` from snapshot rows so the existing selectors can be
     /// reused unchanged. Only the fields they read are populated.

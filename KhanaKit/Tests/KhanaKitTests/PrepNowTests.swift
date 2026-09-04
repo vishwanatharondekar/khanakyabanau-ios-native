@@ -91,3 +91,53 @@ final class PrepNowTests: XCTestCase {
         XCTAssertTrue(PrepNow.due(today: [plain], tomorrow: [], now: at(13), calendar: calendar).isEmpty)
     }
 }
+
+/// `steps` is the focused layouts' source: everything a day needs, not just what
+/// is urgent in the next three hours.
+extension PrepNowTests {
+
+    private func soakingDinner() -> WidgetMeal {
+        WidgetMeal(
+            type: .dinner, name: "Rajma", calories: nil, thumbnailKey: nil,
+            prep: MealPrep(steps: [
+                PrepStep(text: "Soak the rajma", leadTimeMinutes: 480, category: .soak),
+                PrepStep(text: "Chop onions", leadTimeMinutes: 300, category: .chop),
+            ])
+        )
+    }
+
+    func testStepsReturnsEverythingRegardlessOfUrgency() {
+        let steps = PrepNow.steps(for: [soakingDinner()], source: .afternoon)
+        XCTAssertEqual(steps.count, 2)
+    }
+
+    /// The distinction that matters: `due` is a three-hour window, `steps` is not.
+    func testStepsIncludesWhatDueWouldHaveFilteredOut() {
+        let meals = [soakingDinner()]
+        let dawn = calendar.date(
+            from: DateComponents(year: 2026, month: 9, day: 4, hour: 5, minute: 0)
+        )!
+
+        XCTAssertTrue(PrepNow.due(today: meals, tomorrow: [], now: dawn, calendar: calendar).isEmpty)
+        XCTAssertFalse(PrepNow.steps(for: meals, source: .afternoon).isEmpty)
+    }
+
+    func testTonightSourceReadsTomorrowsRules() {
+        let batter = WidgetMeal(
+            type: .breakfast, name: "Dosa", calories: nil, thumbnailKey: nil,
+            prep: MealPrep(steps: [
+                PrepStep(text: "Ferment the batter", leadTimeMinutes: 14 * 60, category: .ferment),
+            ])
+        )
+        let steps = PrepNow.steps(for: [batter], source: .tonight)
+        XCTAssertEqual(steps.map(\.step.text), ["Ferment the batter"])
+        // 08:00 breakfast minus 14h lands the evening before — the point of the
+        // negative value.
+        XCTAssertLessThan(steps[0].startByMinutes, 0)
+    }
+
+    func testAMealWithoutPrepYieldsNoSteps() {
+        let plain = WidgetMeal(type: .dinner, name: "Khichdi", calories: nil, thumbnailKey: nil, prep: nil)
+        XCTAssertTrue(PrepNow.steps(for: [plain], source: .afternoon).isEmpty)
+    }
+}

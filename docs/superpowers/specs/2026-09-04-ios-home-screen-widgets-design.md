@@ -259,6 +259,30 @@ name over two lines. Calories follow the app's `showCalories` setting, which
 Android's widget does not currently honour — the app gates on it and the widget
 should not disagree with the app on the same device.
 
+### Prep gets its own section when the widget is focused
+
+In two states the widget is showing less, and prep stops being a nine-point line
+under a dish name and becomes a block of its own:
+
+| State | Section | Source |
+|---|---|---|
+| Tomorrow alone (after 21:00) | `START TONIGHT` | `PrepNow.steps(source: .tonight)` |
+| One meal left tonight | `BEFORE DINNER` | `PrepNow.steps(source: .afternoon)` |
+
+Those are exactly the states with rows to spare, and they are the states where
+prep is the most useful thing on the card: looking at tomorrow at 21:00, what to
+start *now* matters more than what you will eat in fourteen hours.
+
+`PrepNow.steps` rather than `PrepNow.due` — `due` is a three-hour urgency window
+and this is "what does this day need at all", which is a different question.
+
+**The banner is suppressed whenever this section shows.** Both say the same
+thing, and two urgency notices in a 155pt card is one too many.
+
+Two steps on a large widget, one on a medium: the section plus a header already
+takes 82 of a medium's 120 points, and a second step would leave no room for the
+meal the prep is *for*. A `+N` carries the remainder.
+
 ### This diverges from Android, deliberately
 
 Android keeps two widgets and this keeps one. That is a real inconsistency, and
