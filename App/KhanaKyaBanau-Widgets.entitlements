@@ -2,25 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!--
-	  The widget's two capabilities, kept out of KhanaKyaBanau.entitlements for
-	  the same reason push is: both need a paid Apple Developer Program
-	  membership to provision, and putting them in the default entitlements
-	  would stop the app installing on a personal device for anyone without one.
-
-	  Build with:
-	      KKB_ENTITLEMENTS=App/KhanaKyaBanau-Widgets.entitlements
-
-	  They are two different mechanisms and are easy to confuse:
-
-	  - application-groups shares a *directory*. That is where the widget
-	    snapshot and its cached thumbnails live, and it is all the widget needs
-	    to render.
-	  - keychain-access-groups shares *keychain items*, and is needed only so the
-	    extension can read the session token to refresh a stale snapshot by
-	    itself. Adding it changes the identity of every existing keychain item,
-	    which is why KeychainStore.migrateToSharedAccessGroup exists.
-	-->
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>group.in.khanakyabanau.app</string>
