@@ -360,7 +360,10 @@ struct WidgetMealRow: View {
 
     var body: some View {
         Link(destination: WidgetDeepLink.url(day: day.day, mealType: meal.type)) {
-            HStack(spacing: KkbWidget.thumbnailGap) {
+            // Top, not centre. A two-line dish name grows downward, and centring
+            // pushes the meal-type label out of line with its thumbnail — so
+            // rows with long names sit visibly lower than rows with short ones.
+            HStack(alignment: .top, spacing: KkbWidget.thumbnailGap) {
                 thumbnailView
                 VStack(alignment: .leading, spacing: 2) {
                     Text(meal.type.displayName.uppercased())
