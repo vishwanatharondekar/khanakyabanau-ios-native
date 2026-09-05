@@ -285,11 +285,16 @@ under a dish name and becomes a block of its own:
 | State | Section | Source |
 |---|---|---|
 | Tomorrow alone (after 21:00) | `START TONIGHT` | `PrepNow.steps(source: .tonight)` |
-| One meal left tonight | `BEFORE DINNER` | `PrepNow.steps(source: .afternoon)` |
+| Anything still ahead today | `BEFORE DINNER`, or `PREP TODAY` when the steps span meals | `PrepNow.steps(source: .afternoon)` |
 
-Those are exactly the states with rows to spare, and they are the states where
-prep is the most useful thing on the card: looking at tomorrow at 21:00, what to
-start *now* matters more than what you will eat in fourteen hours.
+Including the morning. An eight-hour soak for tonight's dinner has to start at
+noon, and a nine-point line under a dish eleven hours before you eat it is the
+wrong place to say so. `.afternoon` narrows to the evening meals by itself, so
+this stays "what does tonight need" whatever else is still ahead.
+
+**The section names its dish**, because the row it refers to is not always on
+screen: before 09:00 with five meals ahead the budget trims to four and drops
+dinner — the very meal a `BEFORE DINNER` section is about.
 
 `PrepNow.steps` rather than `PrepNow.due` — `due` is a three-hour urgency window
 and this is "what does this day need at all", which is a different question.

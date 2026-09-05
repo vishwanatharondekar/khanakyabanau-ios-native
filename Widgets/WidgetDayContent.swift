@@ -165,23 +165,44 @@ struct WidgetDayContent: View {
     ///
     /// `nil` in every other state, where the banner covers urgency and the
     /// per-meal lines cover the rest.
-    private var focusedPrep: (eyebrow: String, items: [PrepTonightItem])? {
+    private var focusedPrep: (eyebrow: String, dish: String?, items: [PrepTonightItem])? {
         guard family != .systemSmall else { return nil }
 
         switch phase {
         case .tomorrow:
             guard let tomorrow = entry.tomorrow else { return nil }
             let items = PrepNow.steps(for: tomorrow.meals, source: .tonight)
-            return items.isEmpty ? nil : ("START TONIGHT", items)
-
-        case .tonight where remaining.count == 1:
-            let items = PrepNow.steps(for: remaining, source: .afternoon)
-            guard !items.isEmpty, let only = remaining.first else { return nil }
-            return ("BEFORE \(only.type.displayName.uppercased())", items)
+            return items.isEmpty ? nil : ("START TONIGHT", dish(in: items), items)
 
         case .today, .tonight:
-            return nil
+            // Morning too, not just the evening. An eight-hour soak for tonight's
+            // dinner has to start at noon, and a nine-point line under a dish
+            // eleven hours before you eat it is the wrong place to say so.
+            //
+            // `.afternoon` narrows to the evening meals by itself, so this is
+            // "what does tonight need" whatever else is still ahead today.
+            let items = PrepNow.steps(for: remaining, source: .afternoon)
+            return items.isEmpty ? nil : (eyebrow(for: items), dish(in: items), items)
         }
+    }
+
+    /// Names the meal when every step belongs to one, and stays general when they
+    /// do not — "BEFORE DINNER" is worth more than "PREP TODAY", but only when
+    /// it is true.
+    private func eyebrow(for items: [PrepTonightItem]) -> String {
+        let types = Set(items.map(\.mealType))
+        guard types.count == 1, let only = types.first else { return "PREP TODAY" }
+        return "BEFORE \(only.displayName.uppercased())"
+    }
+
+    /// The dish these steps belong to, when they all belong to one.
+    ///
+    /// The section has to stand on its own, because the row it refers to may not
+    /// be on screen: before 09:00 with five meals ahead the budget trims to four
+    /// and drops dinner — the very meal a "BEFORE DINNER" section is about.
+    private func dish(in items: [PrepTonightItem]) -> String? {
+        let dishes = Set(items.map(\.dish))
+        return dishes.count == 1 ? dishes.first : nil
     }
 
     /// The one clock-aware thing on the widget, and deliberately not per-section:
@@ -211,6 +232,7 @@ struct WidgetDayContent: View {
             if let focusedPrep {
                 PrepFocusSection(
                     eyebrow: focusedPrep.eyebrow,
+                    dish: focusedPrep.dish,
                     items: focusedPrep.items,
                     limit: focusStepLimit
                 )
@@ -454,6 +476,8 @@ struct RestedState: View {
 /// round.
 struct PrepFocusSection: View {
     let eyebrow: String
+    /// Named so the section reads on its own when the meal's row was trimmed.
+    let dish: String?
     let items: [PrepTonightItem]
     let limit: Int
 
@@ -469,10 +493,19 @@ struct PrepFocusSection: View {
                 Text(eyebrow)
                     .font(.system(size: KkbWidget.eyebrowSize, weight: .bold))
                     .foregroundStyle(KkbWidget.terracotta600)
+                    .fixedSize()
+                if let dish {
+                    Text(dish)
+                        .font(.system(size: KkbWidget.eyebrowSize))
+                        .foregroundStyle(KkbWidget.ink600)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
                 if items.count > visible.count {
                     Text("+\(items.count - visible.count)")
                         .font(.system(size: KkbWidget.eyebrowSize))
                         .foregroundStyle(KkbWidget.ink600)
+                        .fixedSize()
                 }
             }
 
