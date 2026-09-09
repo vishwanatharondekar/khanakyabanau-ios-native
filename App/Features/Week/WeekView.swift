@@ -15,6 +15,9 @@ struct WeekView: View {
     /// Hitting a guest allowance should lead somewhere, so the limit prompt can
     /// open the same account-creation sheet the drawer offers.
     var onRequestAccount: () -> Void
+    /// Promoted into the grid only on an empty week; otherwise it lives in the
+    /// header's overflow.
+    var onGenerate: () -> Void = {}
 
     var body: some View {
         content(model)
@@ -65,6 +68,16 @@ struct WeekView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 18) {
+                        if model.isEmptyWeek {
+                            WeekHero(
+                                brand: Brand.current,
+                                generateLabel: primaryGenerateLabel(
+                                    Brand.current, hasEmptySlots: model.hasEmptySlots
+                                ),
+                                onGenerate: onGenerate
+                            )
+                        }
+
                         if let error = model.errorMessage {
                             InlineErrorCard(message: error) {
                                 Task { await model.pullToRefresh() }
@@ -176,53 +189,5 @@ struct WeekView: View {
             Text(model.guestLimitPrompt ?? "")
         }
         .kkbToast($model.toast)
-    }
-
-    private func actionRow(_ model: WeekViewModel) -> some View {
-        HStack(spacing: 10) {
-            ActionPill(
-                variant: .ai,
-                systemImage: "sparkles",
-                title: "AI"
-            ) {
-                env.analytics.track(
-                    AnalyticsEvents.Mood.open, category: AnalyticsEvents.Category.mood
-                )
-                model.isAIPromptOpen = true
-            }
-            ActionPill(variant: .pdf, systemImage: "doc.richtext", title: "PDF") {
-                Task { await exportPDF(model) }
-            }
-            ActionPill(variant: .clear, systemImage: "trash", title: "Clear") {
-                model.isClearConfirmOpen = true
-            }
-        }
-    }
-
-    private func exportPDF(_ model: WeekViewModel) async {
-        env.analytics.track(
-            AnalyticsEvents.PDF.generateMealPlan,
-            category: AnalyticsEvents.Category.pdf,
-            parameters: [AnalyticsProperties.weekStart: model.weekStartDate]
-        )
-        let language = env.settings.language.language
-        let translations = await env.translations.translations(
-            for: language, texts: model.plan.allDishNames()
-        )
-        guard let url = MealPlanPDF.render(
-            plan: model.plan,
-            enabledTypes: model.enabledTypes,
-            weekRangeLabel: model.weekRangeLabel,
-            translations: translations,
-            language: language,
-            videoURL: { env.videos.url(for: $0) }
-        ) else {
-            model.errorMessage = "Failed to generate PDF"
-            return
-        }
-        env.analytics.track(
-            AnalyticsEvents.PDF.downloadMealPlan, category: AnalyticsEvents.Category.pdf
-        )
-        SharePresenter.present(items: [url])
     }
 }

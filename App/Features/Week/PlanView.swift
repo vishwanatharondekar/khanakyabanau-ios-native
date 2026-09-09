@@ -24,6 +24,37 @@ struct PlanView: View {
         session.isGuest && (session.user?.remainingShoppingLists ?? 1) <= 0
     }
 
+    private let brand = Brand.current
+
+    /// Share the week as a PDF. Lives here rather than in the Meals pane because
+    /// the header owns the action, and Shopping shares the same header.
+    private func onShare() async {
+        env.analytics.track(
+            AnalyticsEvents.PDF.generateMealPlan,
+            category: AnalyticsEvents.Category.pdf,
+            parameters: [AnalyticsProperties.weekStart: model.weekStartDate]
+        )
+        let language = env.settings.language.language
+        let translations = await env.translations.translations(
+            for: language, texts: model.plan.allDishNames()
+        )
+        guard let url = MealPlanPDF.render(
+            plan: model.plan,
+            enabledTypes: model.enabledTypes,
+            weekRangeLabel: model.weekRangeLabel,
+            translations: translations,
+            language: language,
+            videoURL: { env.videos.url(for: $0) }
+        ) else {
+            model.errorMessage = "Failed to generate PDF"
+            return
+        }
+        env.analytics.track(
+            AnalyticsEvents.PDF.downloadMealPlan, category: AnalyticsEvents.Category.pdf
+        )
+        SharePresenter.present(items: [url])
+    }
+
     var body: some View {
         VStack(spacing: 4) {
             HStack {
@@ -34,7 +65,26 @@ struct PlanView: View {
                     onSelect: { week in Task { await model.selectWeek(week) } }
                 )
                 Spacer()
-                // Task 10 puts WeekActions here.
+                WeekActions(
+                    brand: brand,
+                    generateLabel: primaryGenerateLabel(brand, hasEmptySlots: model.hasEmptySlots),
+                    canGenerate: canGenerate(brand, for: session.user),
+                    canImport: canImportPlan(brand, for: session.user),
+                    canEdit: canEditPlan(brand),
+                    onGenerate: {
+                        env.analytics.track(
+                            AnalyticsEvents.Mood.open,
+                            category: AnalyticsEvents.Category.mood
+                        )
+                        model.isAIPromptOpen = true
+                    },
+                    // iOS has no PDF import screen yet, so canImport is false and
+                    // this never runs. The seam is what will surface it.
+                    onImport: {},
+                    onShare: { Task { await onShare() } },
+                    onClear: { model.isClearConfirmOpen = true },
+                    onOverflowOpened: model.trackOverflowOpen
+                )
             }
             .padding(.horizontal, 16)
 
@@ -46,7 +96,14 @@ struct PlanView: View {
                 WeekView(
                     model: model,
                     onOpenVideo: onOpenVideo,
-                    onRequestAccount: onRequestAccount
+                    onRequestAccount: onRequestAccount,
+                    onGenerate: {
+                        env.analytics.track(
+                            AnalyticsEvents.Mood.open,
+                            category: AnalyticsEvents.Category.mood
+                        )
+                        model.isAIPromptOpen = true
+                    }
                 )
             case .shopping:
                 ShoppingPane(

@@ -88,6 +88,31 @@ final class WeekViewModel {
     var weekRangeLabel: String { WeekDates.rangeLabel(weekStartDate: weekStartDate) }
     var enabledTypes: [MealType] { env.settings.enabledTypes }
 
+    /// At least one enabled slot on some day has no dish.
+    var hasEmptySlots: Bool {
+        DayOfWeek.allCases.contains { day in
+            enabledTypes.contains { plan[day, $0].isEmpty }
+        }
+    }
+
+    /// No dish anywhere in the week — this is what promotes the hero.
+    var isEmptyWeek: Bool {
+        DayOfWeek.allCases.allSatisfy { day in
+            enabledTypes.allSatisfy { plan[day, $0].isEmpty }
+        }
+    }
+
+    func trackOverflowOpen() {
+        env.analytics.track(
+            AnalyticsEvents.Navigation.overflowOpen,
+            category: AnalyticsEvents.Category.navigation,
+            parameters: [
+                AnalyticsProperties.weekStart: weekStartDate,
+                "is_empty_week": isEmptyWeek,
+            ]
+        )
+    }
+
     var todayIndex: Int? { WeekDates.todayIndex(in: weekStartDate) }
     var tomorrowIndex: Int? { WeekDates.tomorrowIndex(in: weekStartDate) }
 
