@@ -10,6 +10,10 @@ struct MenuRow: View {
     var systemImage: String
     var tint: Color
     var isEmphasised: Bool = false
+    /// A second line under the title. What lets a row explain itself to someone
+    /// who cannot use it yet — a guest reading why prep reminders are worth an
+    /// account.
+    var subtitle: String? = nil
     var action: () -> Void
 
     var body: some View {
@@ -19,11 +23,19 @@ struct MenuRow: View {
                     .font(.system(size: 17))
                     .foregroundStyle(tint)
                     .frame(width: 24)
-                Text(title)
-                    .kkbFont(.bodyLarge)
-                    .fontWeight(isEmphasised ? .semibold : .regular)
-                    .foregroundStyle(isEmphasised ? tint : Kkb.textPrimary)
-                    .multilineTextAlignment(.leading)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .kkbFont(.bodyLarge)
+                        .fontWeight(isEmphasised ? .semibold : .regular)
+                        .foregroundStyle(isEmphasised ? tint : Kkb.textPrimary)
+                        .multilineTextAlignment(.leading)
+                    if let subtitle {
+                        Text(subtitle)
+                            .kkbFont(.bodySmall)
+                            .foregroundStyle(Kkb.textSecondary)
+                            .multilineTextAlignment(.leading)
+                    }
+                }
                 Spacer()
             }
             .padding(.vertical, 12)

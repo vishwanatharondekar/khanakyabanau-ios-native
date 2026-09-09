@@ -6,7 +6,7 @@
 
 **Architecture:** Every product decision lands in `KhanaKit/Sources/KhanaKit/Logic/` as pure Swift, testable with `swift test` and no simulator — the convention `ShoppingScope`, `WeekDates` and `PrepAfternoon` already set. Above that it is SwiftUI: `@Observable` view models owned by the shell so they survive tab switches, views under `App/Features/`. No new package.
 
-**Tech Stack:** Swift 5.9, SwiftUI (iOS 17), Observation, XcodeGen, swift-testing + XCTest.
+**Tech Stack:** Swift 5.9, SwiftUI (iOS 17), Observation, XcodeGen, XCTest (the suite is XCTest throughout — do not introduce swift-testing for these).
 
 **Specs:** `docs/superpowers/specs/2026-09-08-nav-redesign-design.md` — read **"What changed while building it"** and **"For Android and iOS"** first; where the original sections disagree with those two, the later sections win.
 
@@ -74,86 +74,41 @@ Ships exactly ONE brand. What is not speculative is the rule that makes a brand 
 - [ ] **Step 1: Write the failing tests**
 
 ```swift
-import Testing
+import XCTest
 @testable import KhanaKit
 
-@Suite("Brand capability seam — mirrors the webapp's lib/brand.ts")
-struct BrandTests {
-    let brand = Brand.current
+/// Port-parity tests for the brand seam. Mirrors the webapp's `lib/brand.ts`;
+/// when in doubt, that file is the specification.
+final class BrandTests: XCTestCase {
+
+    private let brand = Brand.current
 
     private func user(isGuest: Bool = false, pdfImport: Bool = false) -> User {
-        var u = User.stub()
-        u.isGuest = isGuest
-        u.features = UserFeatures(pdfImport: pdfImport)
-        return u
+        User(
+            id: "user_1",
+            name: "Test",
+            isGuest: isGuest,
+            features: UserFeatures(pdfImport: pdfImport)
+        )
     }
 
-    @Test func kkbHasEveryCapability() {
-        #expect(brand.capabilities.aiGeneration)
-        #expect(brand.capabilities.pdfImport)
-        #expect(brand.capabilities.readyMadePlans)
-        #expect(brand.capabilities.canEditPlan)
-    }
-
-    @Test func labelsSayWhatTheActionDoes() {
-        #expect(brand.labels.fillWeek == "Fill empty days")
-        #expect(brand.labels.regenerateWeek == "Regenerate week")
-        #expect(brand.labels.importPlan == "Import plan")
-        #expect(brand.labels.emptyTodayTitle == "Nothing planned for today")
-        #expect(brand.labels.emptyTodayCTA == "Plan your week")
-        #expect(brand.labels.emptyWeekTitle == "No meals yet this week")
-    }
-
-    @Test func importNeedsTheUserFlag() {
-        #expect(!canImportPlan(brand, for: user(pdfImport: false)))
-        #expect(canImportPlan(brand, for: user(pdfImport: true)))
-    }
-
-    @Test func guestsNeverImport() {
-        #expect(!canImportPlan(brand, for: user(isGuest: true, pdfImport: true)))
-    }
-
-    @Test func noUserMeansNoImport() {
-        #expect(!canImportPlan(brand, for: nil))
-    }
-
-    @Test func aBrandWithoutImportRefusesAFlaggedUser() {
-        var b = brand
-        b.capabilities.pdfImport = false
-        #expect(!canImportPlan(b, for: user(pdfImport: true)))
-    }
-
-    @Test func guestsMayGenerate() {
-        #expect(canGenerate(brand, for: user(isGuest: true)))
-    }
-
-    @Test func noUserMeansNoGeneration() {
-        #expect(!canGenerate(brand, for: nil))
-    }
-
-    @Test func aBrandWithoutAIRefusesEveryone() {
-        var b = brand
-        b.capabilities.aiGeneration = false
-        #expect(!canGenerate(b, for: user()))
-    }
-
-    @Test func editingFollowsTheBrandAlone() {
-        #expect(canEditPlan(brand))
-        var b = brand
-        b.capabilities.canEditPlan = false
-        #expect(!canEditPlan(b))
-    }
-
-    @Test func featuresDefaultOffSoAnOldProfileCannotGrantOne() {
-        #expect(!User.stub().features.pdfImport)
-    }
-
-    @Test func generateLabelNamesThePromise() {
-        #expect(primaryGenerateLabel(brand, hasEmptySlots: true) == "Fill empty days")
-        #expect(primaryGenerateLabel(brand, hasEmptySlots: false) == "Regenerate week")
-    }
+    func testKkbHasEveryCapability() { ... }
+    func testLabelsSayWhatTheActionDoes() { ... }
+    func testImportNeedsTheUserFlag() { ... }
+    func testGuestsNeverImport() { ... }
+    func testNoUserMeansNoImport() { ... }
+    func testABrandWithoutImportRefusesAFlaggedUser() { ... }
+    func testGuestsMayGenerate() { ... }
+    func testNoUserMeansNoGeneration() { ... }
+    func testABrandWithoutAIRefusesEveryone() { ... }
+    func testEditingFollowsTheBrandAlone() { ... }
+    func testFeaturesDefaultOff() { ... }
+    func testGenerateLabelNamesThePromise() { ... }
 }
 ```
+
+There is no `User.stub()` — construct users with the real initialiser, as above.
+
 
 `User.stub()` may not exist. Check how the existing KhanaKit tests build a `User`; if there is no helper, construct one inline with the real initialiser and drop the helper — do not add a stub to production code.
 
