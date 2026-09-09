@@ -134,5 +134,38 @@ struct PlanView: View {
                 }
             }
         }
+        // Both alerts hang off the header rather than the Meals pane: their
+        // triggers live in the overflow, which is reachable from Shopping too.
+        // Clear asks exactly once — the overflow entry opens this and does not
+        // confirm inline as well.
+        .alert("Clear all meals", isPresented: clearConfirmBinding) {
+            Button("Cancel", role: .cancel) {}
+            Button("Clear", role: .destructive) { Task { await model.clearWeek() } }
+        } message: {
+            Text("Are you sure you want to clear all meals for this week? This action cannot be undone.")
+        }
+        .alert("Register to Continue", isPresented: guestLimitBinding) {
+            Button("Create free account") {
+                model.guestLimitPrompt = nil
+                onRequestAccount()
+            }
+            Button("Not now", role: .cancel) { model.guestLimitPrompt = nil }
+        } message: {
+            Text(model.guestLimitPrompt ?? "")
+        }
+    }
+
+    private var clearConfirmBinding: Binding<Bool> {
+        Binding(
+            get: { model.isClearConfirmOpen },
+            set: { model.isClearConfirmOpen = $0 }
+        )
+    }
+
+    private var guestLimitBinding: Binding<Bool> {
+        Binding(
+            get: { model.guestLimitPrompt != nil },
+            set: { if !$0 { model.guestLimitPrompt = nil } }
+        )
     }
 }

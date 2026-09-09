@@ -19,6 +19,8 @@ struct WeekView: View {
     /// header's overflow.
     var onGenerate: () -> Void = {}
 
+    @State private var isEarlierExpanded = false
+
     var body: some View {
         content(model)
             .task {
@@ -84,9 +86,32 @@ struct WeekView: View {
                             }
                         }
 
-                        ForEach(Array(WeekDates.daysOfWeek(
+                        // Days already gone are not missing data — they are
+                        // days that have passed, and showing them as empty slots
+                        // offering to add a meal asks for something impossible.
+                        // Collapsing rows is not a change to the grid's
+                        // orientation; reorienting would be.
+                        let pastDays = pastDaysInWeek(model.weekStartDate)
+                        let entries = Array(WeekDates.daysOfWeek(
                             from: PlanDate(iso: model.weekStartDate) ?? WeekDates.currentMonday()
-                        ).enumerated()), id: \.element.day) { index, entry in
+                        ).enumerated())
+                        // A wholly past week keeps all seven: collapsing them
+                        // would leave the screen with nothing on it.
+                        let collapses = !pastDays.isEmpty && pastDays.count < entries.count
+
+                        if collapses {
+                            EarlierDaysToggle(
+                                count: pastDays.count,
+                                isExpanded: $isEarlierExpanded
+                            )
+                        }
+
+                        ForEach(
+                            entries.filter { collapses && !isEarlierExpanded
+                                ? !pastDays.contains($0.element.day)
+                                : true },
+                            id: \.element.day
+                        ) { index, entry in
                             WeekDaySection(
                                 day: entry.day,
                                 date: entry.date,
@@ -95,7 +120,7 @@ struct WeekView: View {
                                 isToday: model.todayIndex == index,
                                 isTomorrow: model.tomorrowIndex == index,
                                 isResolvingImages: model.isResolvingImages,
-                                canEdit: model.canEdit,
+                                canEdit: model.canEdit && !pastDays.contains(entry.day),
                                 videoURL: { env.videos.url(for: $0) },
                                 onTapRow: { type in
                                     // An empty row has no dish to watch, so it
@@ -168,27 +193,35 @@ struct WeekView: View {
                 onCancel: { model.isAIPromptOpen = false }
             )
         }
-        .alert("Clear all meals", isPresented: $model.isClearConfirmOpen) {
-            Button("Cancel", role: .cancel) {}
-            Button("Clear", role: .destructive) { Task { await model.clearWeek() } }
-        } message: {
-            Text("Are you sure you want to clear all meals for this week? This action cannot be undone.")
-        }
-        .alert(
-            "Register to Continue",
-            isPresented: Binding(
-                get: { model.guestLimitPrompt != nil },
-                set: { if !$0 { model.guestLimitPrompt = nil } }
-            )
-        ) {
-            Button("Create free account") {
-                model.guestLimitPrompt = nil
-                onRequestAccount()
-            }
-            Button("Not now", role: .cancel) { model.guestLimitPrompt = nil }
-        } message: {
-            Text(model.guestLimitPrompt ?? "")
-        }
         .kkbToast($model.toast)
+    }
+}
+
+/// One line standing in for the days of this week that have already passed.
+///
+/// They still open — "what did we have on Monday?" is worth answering — but
+/// they no longer take a card each, and an "Add a meal" prompt each, to say
+/// that nothing can be done about them.
+private struct EarlierDaysToggle: View {
+    var count: Int
+    @Binding var isExpanded: Bool
+
+    var body: some View {
+        Button { isExpanded.toggle() } label: {
+            HStack(spacing: 6) {
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 13, weight: .semibold))
+                Text(count == 1
+                     ? "1 earlier day this week"
+                     : "\(count) earlier days this week")
+                    .kkbFont(.bodyMedium)
+                Spacer()
+            }
+            .foregroundStyle(Kkb.textSecondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
