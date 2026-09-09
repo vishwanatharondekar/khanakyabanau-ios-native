@@ -110,10 +110,10 @@ struct WeekView: View {
                 .refreshable { await model.pullToRefresh() }
             }
 
+            // Shopping is not here any more: it renders its own loader inside
+            // its pane, because building a list must not block navigation.
             if model.isGenerating {
                 FullScreenLoader(message: "Cooking up suggestions")
-            } else if model.isBuildingShoppingList {
-                FullScreenLoader(message: "Building shopping list")
             }
         }
         .sheet(item: $model.editing) { target in
@@ -154,13 +154,6 @@ struct WeekView: View {
                 onCancel: { model.isAIPromptOpen = false }
             )
         }
-        .sheet(item: $model.shoppingSession) { session in
-            ShoppingListSheet(
-                list: session.list,
-                weekStartDate: session.weekStartDate,
-                onDismiss: { model.shoppingSession = nil }
-            )
-        }
         .alert("Clear all meals", isPresented: $model.isClearConfirmOpen) {
             Button("Cancel", role: .cancel) {}
             Button("Clear", role: .destructive) { Task { await model.clearWeek() } }
@@ -199,13 +192,6 @@ struct WeekView: View {
             }
             ActionPill(variant: .pdf, systemImage: "doc.richtext", title: "PDF") {
                 Task { await exportPDF(model) }
-            }
-            ActionPill(
-                variant: .shopping,
-                systemImage: "cart",
-                title: "Shopping"
-            ) {
-                Task { await model.buildShoppingList() }
             }
             ActionPill(variant: .clear, systemImage: "trash", title: "Clear") {
                 model.isClearConfirmOpen = true

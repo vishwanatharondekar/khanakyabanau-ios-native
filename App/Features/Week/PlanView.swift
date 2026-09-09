@@ -18,6 +18,12 @@ struct PlanView: View {
     var onOpenVideo: (RecipeVideoContext) -> Void
     var onRequestAccount: () -> Void
 
+    /// Unlike Android, the ceiling is known before anything is spent — so a
+    /// guest at their limit is told rather than shown a 403.
+    private var isGuestAtLimit: Bool {
+        session.isGuest && (session.user?.remainingShoppingLists ?? 1) <= 0
+    }
+
     var body: some View {
         VStack(spacing: 4) {
             HStack {
@@ -43,8 +49,18 @@ struct PlanView: View {
                     onRequestAccount: onRequestAccount
                 )
             case .shopping:
-                // Task 9 puts ShoppingPane here.
-                Spacer()
+                ShoppingPane(
+                    state: model.shoppingState,
+                    session: model.shoppingSession,
+                    onRetry: { Task { await model.retryShopping() } },
+                    onCreateAccount: onRequestAccount,
+                    onPlanWeek: { model.selectPane(.meals) }
+                )
+                // Opening the tab is the request. The probe inside is free, so
+                // this cannot charge a guest for walking past.
+                .task(id: model.weekStartDate) {
+                    await model.openShopping(isGuestAtLimit: isGuestAtLimit)
+                }
             }
         }
     }

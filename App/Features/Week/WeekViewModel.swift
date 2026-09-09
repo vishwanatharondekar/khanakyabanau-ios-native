@@ -21,6 +21,23 @@ enum WeekPane: Hashable {
     case meals, shopping
 }
 
+/// Every state the Shopping pane can be in. All seven are real, and they want
+/// different UI — a guest at their ceiling needs an account, not a retry.
+enum ShoppingPaneState: Hashable {
+    /// Asking whether a list exists. Cheap, and spends nothing.
+    case probing
+    /// Actually building one. The slow, AI-backed path.
+    case loading
+    case ready
+    case error(String)
+    /// Guest out of free generations — offer an upgrade, not a retry.
+    case limit
+    /// The week has no dishes to derive a list from.
+    case empty
+    /// A week that has already happened, with no list stored from the time.
+    case past
+}
+
 @MainActor
 @Observable
 final class WeekViewModel {
@@ -43,7 +60,9 @@ final class WeekViewModel {
 
     // Long-running AI work.
     private(set) var isGenerating = false
-    private(set) var isBuildingShoppingList = false
+    private(set) var shoppingState: ShoppingPaneState = .probing
+    /// The in-flight probe-or-generate, so a second open cannot start a second one.
+    private var shoppingTask: Task<Void, Never>?
 
     // Messages.
     var errorMessage: String?
@@ -171,6 +190,11 @@ final class WeekViewModel {
 
         weekStartDate = target
         seenSuggestions.removeAll()
+        // A late response from a week the user has already left must not
+        // overwrite what they are looking at now.
+        shoppingTask?.cancel()
+        shoppingSession = nil
+        shoppingState = .probing
         env.analytics.track(
             AnalyticsEvents.Navigation.weekChange,
             category: AnalyticsEvents.Category.navigation,
@@ -386,29 +410,84 @@ final class WeekViewModel {
 
     // MARK: - Shopping list
 
-    func buildShoppingList() async {
-        guard !plan.allDishNames().isEmpty else {
-            errorMessage = "Please add some meals to your plan first"
-            return
+    /// The week's shopping list, fetched the moment the tab opens.
+    ///
+    /// Two steps, deliberately. A `cachedOnly` probe answers "is there already a
+    /// list for this week?" for free — no AI call, no guest allowance spent —
+    /// and only a miss starts a real generation. Without that split the tab
+    /// could not open itself: firing the generating call on navigation would
+    /// charge a guest for walking past.
+    ///
+    /// Nothing here blocks navigation: the loader renders inside the pane while
+    /// the tab bar stays live, and a generation the user walks away from still
+    /// finishes and still writes the server's cache, so coming back finds it.
+    func openShopping(isGuestAtLimit: Bool) async {
+        // Already showing this week's list — reopening the tab is not a reason
+        // to re-probe, let alone regenerate.
+        if shoppingSession?.weekStartDate == weekStartDate, shoppingState == .ready { return }
+        if let shoppingTask, !shoppingTask.isCancelled { _ = await shoppingTask.value; return }
+
+        let task = Task { @MainActor in
+            shoppingState = .probing
+
+            let probe = try? await env.ai.shoppingList(for: plan, cachedOnly: true)
+            let cached = probe.map { !$0.absent } ?? false
+
+            switch shoppingOpenOutcome(
+                weekStartDate: weekStartDate,
+                cached: cached,
+                hasDishes: !plan.allDishNames().isEmpty,
+                isGuestAtLimit: isGuestAtLimit
+            ) {
+            case .show:
+                if let probe { apply(probe) }
+            case .empty:
+                shoppingState = .empty
+            case .past:
+                shoppingState = .past
+            case .limit:
+                shoppingState = .limit
+            case .generate:
+                await generateShoppingList()
+            }
         }
-        isBuildingShoppingList = true
+        shoppingTask = task
+        await task.value
+        shoppingTask = nil
+    }
+
+    /// An explicit retry after a failure. Skips the probe — it already missed.
+    func retryShopping() async {
+        await generateShoppingList()
+    }
+
+    private func generateShoppingList() async {
+        shoppingState = .loading
+        // Fire at request time, not response, to mirror the webapp's behaviour
+        // and capture attempts that fail server-side.
         env.analytics.track(
             AnalyticsEvents.AI.extractIngredients,
             category: AnalyticsEvents.Category.aiFeatures,
             parameters: [AnalyticsProperties.weekStart: weekStartDate]
         )
         do {
-            let list = try await env.ai.shoppingList(for: plan)
-            shoppingSession = ShoppingSession(list: list, weekStartDate: weekStartDate)
-        } catch let APIError.guestLimitReached(message, _) {
-            guestLimitPrompt = message
-                ?? "You've used your free shopping lists. Create a free account for unlimited access."
+            apply(try await env.ai.shoppingList(for: plan))
+        } catch APIError.guestLimitReached {
+            // The ceiling and a real failure want different UI: an account, not
+            // a retry.
+            shoppingState = .limit
         } catch let error as APIError {
-            errorMessage = error.userMessage(fallback: "Failed to generate shopping list")
+            shoppingState = .error(
+                error.userMessage(fallback: "Failed to generate shopping list")
+            )
         } catch {
-            errorMessage = "Failed to generate shopping list"
+            shoppingState = .error("Failed to generate shopping list")
         }
-        isBuildingShoppingList = false
+    }
+
+    private func apply(_ list: ShoppingList) {
+        shoppingSession = ShoppingSession(list: list, weekStartDate: weekStartDate)
+        shoppingState = .ready
     }
 
     // MARK: - Suggestions
