@@ -134,7 +134,9 @@ struct HomeView: View {
                         onOpenMeal: { day, type in
                             path.append(.mealDetail(day: day, type: type))
                         },
-                        onOpenVideo: { videoContext = $0 }
+                        onOpenVideo: { videoContext = $0 },
+                        userName: session.user?.name,
+                        onPlanWeek: { tab = .plan }
                     )
                 }
             }

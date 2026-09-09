@@ -10,6 +10,8 @@ struct TodayView: View {
     var onOpenTomorrow: () -> Void
     var onOpenMeal: (DayOfWeek, MealType) -> Void
     var onOpenVideo: (RecipeVideoContext) -> Void
+    var userName: String?
+    var onPlanWeek: () -> Void = {}
 
     var body: some View {
         content(model)
@@ -34,19 +36,25 @@ struct TodayView: View {
                         }
                     }
 
-                    header(model)
+                    GreetingHeader(name: userName)
 
-                    ForEach(model.enabledTypes) { type in
-                        TodayMealCard(
-                            type: type,
-                            meal: model.today.meals[type],
-                            showCalories: model.showCalories,
-                            isResolvingImages: model.isResolvingImages,
-                            onTap: {
-                                guard !model.today.meals[type].isEmpty else { return }
-                                onOpenMeal(model.today.day, type)
-                            }
-                        )
+                    // An empty Today is a designed state, not something to route
+                    // around — the app opens here either way.
+                    if model.enabledTypes.allSatisfy({ model.today.meals[$0].isEmpty }) {
+                        EmptyToday(onPlanWeek: onPlanWeek)
+                    } else {
+                        ForEach(model.enabledTypes) { type in
+                            TodayMealCard(
+                                type: type,
+                                meal: model.today.meals[type],
+                                showCalories: model.showCalories,
+                                isResolvingImages: model.isResolvingImages,
+                                onTap: {
+                                    guard !model.today.meals[type].isEmpty else { return }
+                                    onOpenMeal(model.today.day, type)
+                                }
+                            )
+                        }
                     }
 
                     if !model.afternoonPrep.isEmpty {
@@ -77,31 +85,6 @@ struct TodayView: View {
             .refreshable { await model.pullToRefresh() }
             .kkbToast($model.toast)
         }
-    }
-
-    private func header(_ model: TodayViewModel) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 12) {
-                LinearGradient(
-                    colors: [Kkb.terracotta500, Kkb.marigold500],
-                    startPoint: .top, endPoint: .bottom
-                )
-                .frame(width: 5, height: 60)
-                .clipShape(RoundedRectangle(cornerRadius: 3))
-
-                Text("On today's card")
-                    .kkbFont(.displayMedium)
-                    .italic()
-                    .foregroundStyle(Kkb.textPrimary)
-                Spacer()
-            }
-            Divider().overlay(Kkb.hairline)
-            Text("\(model.today.day.displayName.uppercased()) · \(model.today.date.isoString)")
-                .kkbFont(.sectionLabel)
-                .tracking(4)
-                .foregroundStyle(Kkb.textSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
