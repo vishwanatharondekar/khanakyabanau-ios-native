@@ -83,6 +83,9 @@ struct PlanView: View {
                     onImport: {},
                     onShare: { Task { await onShare() } },
                     onClear: { model.isClearConfirmOpen = true },
+                    onBrowseEarlier: model.earlierWeek == nil
+                        ? nil
+                        : { Task { await model.browseEarlier() } },
                     onOverflowOpened: model.trackOverflowOpen
                 )
             }
@@ -90,6 +93,17 @@ struct PlanView: View {
 
             WeekSubTabs(active: model.pane, onSelect: model.selectPane)
                 .padding(.horizontal, 12)
+
+            if model.viewingPastWeek {
+                PastWeekBar(
+                    weekStartDate: model.weekStartDate,
+                    hasEarlierWeek: model.earlierWeek != nil,
+                    onEarlier: { Task { await model.browseEarlier() } },
+                    onThisWeek: { Task { await model.backToThisWeek() } }
+                )
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+            }
 
             switch model.pane {
             case .meals:

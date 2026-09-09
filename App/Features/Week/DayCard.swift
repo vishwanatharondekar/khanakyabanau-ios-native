@@ -15,6 +15,9 @@ struct WeekDaySection: View {
     var isToday: Bool
     var isTomorrow: Bool
     var isResolvingImages: Bool
+    /// False for a week that has already happened, a day already gone, or a
+    /// read-only brand.
+    var canEdit: Bool = true
     var videoURL: (Meal) -> String?
     var onTapRow: (MealType) -> Void
     var onEdit: (MealType) -> Void
@@ -64,6 +67,7 @@ struct WeekDaySection: View {
                     type: type,
                     meal: meals[type],
                     isResolvingImages: isResolvingImages,
+                    canEdit: canEdit,
                     videoURL: videoURL(meals[type]),
                     onTap: { onTapRow(type) },
                     onEdit: { onEdit(type) },
@@ -108,6 +112,7 @@ struct MealRow: View {
     var type: MealType
     var meal: Meal
     var isResolvingImages: Bool
+    var canEdit: Bool = true
     var videoURL: String?
     var onTap: () -> Void
     var onEdit: () -> Void
@@ -116,7 +121,7 @@ struct MealRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Button(action: onTap) {
+            Button(action: { if canEdit || !meal.isEmpty { onTap() } }) {
                 // Top, not centre: a two- or three-line dish name should grow
                 // downwards from the thumbnail's top edge rather than push the
                 // eyebrow up away from it.
@@ -135,7 +140,10 @@ struct MealRow: View {
                             .foregroundStyle(type.chipText)
 
                         if meal.isEmpty {
-                            Text("write a dish…")
+                            // "write a dish" is an instruction, and on a day
+                            // already gone there is nothing to write — a dash
+                            // says empty without asking for anything.
+                            Text(canEdit ? "write a dish…" : "—")
                                 .kkbFont(.handwritten)
                                 .foregroundStyle(Kkb.textSecondary.opacity(0.8))
                         } else {
@@ -170,15 +178,20 @@ struct MealRow: View {
     @ViewBuilder
     private var controls: some View {
         if meal.isEmpty {
-            Button(action: onTap) {
-                Image(systemName: "plus")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Kkb.accentText)
-                    .frame(width: 32, height: 32)
-                    .background(Circle().fill(Kkb.terracottaSurface))
+            // Nothing at all when read-only. A disabled button would read as
+            // broken rather than deliberate — the point is that you cannot
+            // change what you already ate, not that the screen is failing.
+            if canEdit {
+                Button(action: onTap) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Kkb.accentText)
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(Kkb.terracottaSurface))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Add a \(type.displayName.lowercased()) for \(day.displayName)")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Add a \(type.displayName.lowercased()) for \(day.displayName)")
         } else {
             VStack(spacing: 8) {
                 circleButton(
@@ -189,22 +202,26 @@ struct MealRow: View {
                     label: videoURL != nil ? "Watch recipe video" : "Add a recipe video",
                     action: onVideo
                 )
-                circleButton(
-                    systemImage: "arrow.triangle.2.circlepath",
-                    tint: Kkb.textSecondary,
-                    fill: Kkb.cream100,
-                    border: Kkb.hairline,
-                    label: "Switch meal",
-                    action: onSwap
-                )
-                circleButton(
-                    systemImage: "pencil",
-                    tint: Kkb.textSecondary,
-                    fill: Kkb.cream100,
-                    border: Kkb.hairline,
-                    label: "Edit meal",
-                    action: onEdit
-                )
+                // Watching how something was cooked is not editing it, so the
+                // video control above stays; these two go.
+                if canEdit {
+                    circleButton(
+                        systemImage: "arrow.triangle.2.circlepath",
+                        tint: Kkb.textSecondary,
+                        fill: Kkb.cream100,
+                        border: Kkb.hairline,
+                        label: "Switch meal",
+                        action: onSwap
+                    )
+                    circleButton(
+                        systemImage: "pencil",
+                        tint: Kkb.textSecondary,
+                        fill: Kkb.cream100,
+                        border: Kkb.hairline,
+                        label: "Edit meal",
+                        action: onEdit
+                    )
+                }
             }
         }
     }

@@ -88,6 +88,30 @@ final class WeekViewModel {
     var weekRangeLabel: String { WeekDates.rangeLabel(weekStartDate: weekStartDate) }
     var enabledTypes: [MealType] { env.settings.enabledTypes }
 
+    /// The displayed week has already happened.
+    var viewingPastWeek: Bool { isPastWeek(weekStartDate) }
+
+    /// Whether the user may change this week. Brand capability AND not history,
+    /// as one gate — so a read-only brand and a past week take the same path
+    /// through every write rather than each growing their own.
+    var canEdit: Bool { canEditPlan(Brand.current) && !viewingPastWeek }
+
+    /// Where a backwards step lands: the nearest earlier week that actually has
+    /// a plan, skipping gaps so the step never lands on nothing, and nil at the
+    /// oldest so it stops rather than walking into empty years.
+    var earlierWeek: String? {
+        nearestEarlierWeekWithPlan(weekStartDate, in: earlierWeeks)
+    }
+
+    func browseEarlier() async {
+        guard let earlierWeek else { return }
+        await selectWeek(earlierWeek)
+    }
+
+    func backToThisWeek() async {
+        await selectWeek(WeekDates.format(WeekDates.currentMonday()))
+    }
+
     /// At least one enabled slot on some day has no dish.
     var hasEmptySlots: Bool {
         DayOfWeek.allCases.contains { day in
@@ -243,6 +267,7 @@ final class WeekViewModel {
     /// A tap on an empty slot opens suggestions; a filled slot opens the rename
     /// dialog. Replacing a filled slot is the explicit swap button.
     func confirmEdit(target: SlotTarget, name: String, imageUrl: String? = nil) async {
+        guard canEdit else { return }
         let previous = plan[target.day, target.type]
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let wasEmpty = previous.isEmpty
@@ -289,6 +314,7 @@ final class WeekViewModel {
     /// Picking from the suggestion sheet. Carries the resolved thumbnail through so
     /// the tapped card doesn't shimmer back to a placeholder.
     func applySuggestion(target: SlotTarget, name: String, imageUrl: String?) async {
+        guard canEdit else { return }
         let wasEmpty = plan[target.day, target.type].isEmpty
         env.analytics.track(
             wasEmpty ? AnalyticsEvents.Meal.add : AnalyticsEvents.Meal.update,
@@ -313,6 +339,7 @@ final class WeekViewModel {
     }
 
     func clearWeek() async {
+        guard canEdit else { return }
         env.analytics.track(
             AnalyticsEvents.Meal.clearWeek,
             category: AnalyticsEvents.Category.mealPlanning,
@@ -378,6 +405,7 @@ final class WeekViewModel {
         moodCuisines: [String],
         restrictToIngredients: Bool = false
     ) async {
+        guard canEdit else { return }
         isAIPromptOpen = false
         isGenerating = true
 
