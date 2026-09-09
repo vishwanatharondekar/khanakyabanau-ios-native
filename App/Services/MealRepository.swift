@@ -47,6 +47,22 @@ final class MealRepository {
     }
 
     /// Previous weeks, newest first, used to seed local suggestions.
+    /// Week starts that hold a plan. `direction: "back"` looks at weeks already
+    /// gone; nil looks forward.
+    ///
+    /// A failure here must not take the week down — the caller falls back to
+    /// this-week/next-week, which is what almost everyone sees anyway.
+    func weeksWithPlans(from: String, direction: String? = nil) async -> [String] {
+        do {
+            return try await api.send(
+                Endpoints.weeksWithPlans(from: from, direction: direction),
+                as: WeeksWithPlansResponse.self
+            ).weekStartDates
+        } catch {
+            return []
+        }
+    }
+
     func history(targetWeek: String, limit: Int = 10) async throws -> [MealPlan] {
         try await api.send(
             Endpoints.history(targetWeek: targetWeek, limit: limit), as: [MealPlan].self
