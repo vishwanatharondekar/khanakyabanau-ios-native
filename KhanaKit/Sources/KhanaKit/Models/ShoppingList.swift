@@ -50,19 +50,24 @@ public struct ShoppingList: Codable, Hashable, Sendable {
     public var newItems: [String]
     /// True when the server served this from cache without an AI call.
     public var cached: Bool
+    /// The server's answer to a `cachedOnly` probe when nothing is stored. Only
+    /// ever true on a probe response; a real generation always returns a list.
+    public var absent: Bool
 
     public init(
         categorized: [String: [Ingredient]] = [:],
         dayWise: [String: [String: MealIngredients]] = [:],
         haveAlready: [String] = [],
         newItems: [String] = [],
-        cached: Bool = false
+        cached: Bool = false,
+        absent: Bool = false
     ) {
         self.categorized = categorized
         self.dayWise = dayWise
         self.haveAlready = haveAlready
         self.newItems = newItems
         self.cached = cached
+        self.absent = absent
     }
 
     public init(from decoder: any Decoder) throws {
@@ -72,6 +77,7 @@ public struct ShoppingList: Codable, Hashable, Sendable {
         haveAlready = (try? c.decode([String].self, forKey: .haveAlready)) ?? []
         newItems = (try? c.decode([String].self, forKey: .newItems)) ?? []
         cached = (try? c.decode(Bool.self, forKey: .cached)) ?? false
+        absent = (try? c.decode(Bool.self, forKey: .absent)) ?? false
     }
 
     public var isEmpty: Bool { categorized.values.allSatisfy(\.isEmpty) }
