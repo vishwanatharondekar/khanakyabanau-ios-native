@@ -1,8 +1,9 @@
 import KhanaKit
 import SwiftUI
 
-/// "The Week" — the planner grid. Seven day cards, each with a row per enabled
-/// course, above a row of four actions.
+/// The Meals pane of a week: seven day cards, each with a row per enabled
+/// course. The week selector, the view tabs and the actions live above it in
+/// `PlanView`, shared with Shopping.
 struct WeekView: View {
     @Environment(\.app) private var env
     @Environment(SessionStore.self) private var session
@@ -64,14 +65,6 @@ struct WeekView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 18) {
-                        WeekHeader(
-                            label: model.weekRangeLabel,
-                            onPrevious: { Task { await model.goToPreviousWeek() } },
-                            onNext: { Task { await model.goToNextWeek() } }
-                        )
-
-                        actionRow(model)
-
                         if let error = model.errorMessage {
                             InlineErrorCard(message: error) {
                                 Task { await model.pullToRefresh() }
@@ -245,50 +238,5 @@ struct WeekView: View {
             AnalyticsEvents.PDF.downloadMealPlan, category: AnalyticsEvents.Category.pdf
         )
         SharePresenter.present(items: [url])
-    }
-}
-
-/// ← week range → header.
-private struct WeekHeader: View {
-    var label: String
-    var onPrevious: () -> Void
-    var onNext: () -> Void
-
-    var body: some View {
-        PaperCard(cornerRadius: 28, padding: 16) {
-            HStack(spacing: 12) {
-                navButton(systemImage: "chevron.left", label: "Previous week", action: onPrevious)
-                VStack(spacing: 3) {
-                    Text("THE WEEK OF")
-                        .kkbFont(.sectionLabel)
-                        .tracking(4)
-                        .foregroundStyle(Kkb.accentText)
-                    Text(label)
-                        .kkbFont(.displayMedium)
-                        .foregroundStyle(Kkb.textPrimary)
-                        .editorialHighlight()
-                        .minimumScaleFactor(0.7)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity)
-                navButton(systemImage: "chevron.right", label: "Next week", action: onNext)
-            }
-        }
-    }
-
-    private func navButton(
-        systemImage: String,
-        label: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Kkb.ink700)
-                .frame(width: 40, height: 40)
-                .background(Circle().fill(Kkb.cream100))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
     }
 }

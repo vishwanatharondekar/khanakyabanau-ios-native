@@ -16,6 +16,11 @@ struct SlotTarget: Identifiable, Hashable {
     var id: String { "\(day.key)-\(type.key)" }
 }
 
+/// Which view of a week is showing. Both are children of the same week.
+enum WeekPane: Hashable {
+    case meals, shopping
+}
+
 @MainActor
 @Observable
 final class WeekViewModel {
@@ -29,6 +34,12 @@ final class WeekViewModel {
     private(set) var weekStartDate: String = WeekDates.format(WeekDates.currentMonday())
     private(set) var plan: MealPlan = .empty(weekStartDate: WeekDates.format(WeekDates.currentMonday()))
     private(set) var history: [MealPlan] = []
+    /// The weeks on offer: this week, next week, and any further week with a plan.
+    private(set) var chips: [WeekChip] = []
+    /// Earlier weeks that hold a plan, for stepping back through history.
+    private(set) var earlierWeeks: [String] = []
+    /// Which view of the week is showing.
+    var pane: WeekPane = .meals
 
     // Long-running AI work.
     private(set) var isGenerating = false
@@ -71,13 +82,31 @@ final class WeekViewModel {
         await env.settings.ensureMealSettings()
         await fetchWeek(showSpinner: true)
         await loadHistory()
+        await refreshChips()
     }
 
     func pullToRefresh() async {
         isRefreshing = true
         await env.videos.refresh()
+        await refreshChips()
         await fetchWeek(showSpinner: false)
         isRefreshing = false
+    }
+
+    /// Both directions of the week strip.
+    ///
+    /// Separate from the week load because an imported multi-week plan can
+    /// create weeks that need chips without changing the displayed week, so a
+    /// week-keyed fetch would not notice. `weeksWithPlans` swallows failure: the
+    /// strip falls back to this-week/next-week, which is what almost everyone
+    /// sees anyway, and a missing chip must not take the week itself down.
+    func refreshChips() async {
+        let thisWeek = WeekDates.format(WeekDates.currentMonday())
+        async let forward = env.meals.weeksWithPlans(from: thisWeek)
+        async let back = env.meals.weeksWithPlans(from: thisWeek, direction: "back")
+        let (upcoming, earlier) = await (forward, back)
+        chips = buildWeekChips(weeksWithPlans: upcoming)
+        earlierWeeks = earlier
     }
 
     private func fetchWeek(showSpinner: Bool) async {
@@ -123,23 +152,40 @@ final class WeekViewModel {
 
     // MARK: - Week navigation
 
-    func goToPreviousWeek() async { await changeWeek(by: -1, direction: "prev") }
-    func goToNextWeek() async { await changeWeek(by: 1, direction: "next") }
+    /// Go to a week by name rather than by direction.
+    ///
+    /// The old previous/next pager offered infinite navigation in both
+    /// directions to serve neither case — nobody pages backwards through a meal
+    /// planner and nobody plans three weeks out.
+    func selectWeek(_ target: String) async {
+        guard target != weekStartDate else { return }
+        // Which chip was tapped, or that the week is off the strip entirely —
+        // someone arriving from a months-old reminder.
+        let kind = chips.first { $0.weekStartDate == target }.map { chip -> String in
+            switch chip.kind {
+            case .thisWeek: "this"
+            case .nextWeek: "next"
+            case .dated: "dated"
+            }
+        } ?? "off_rails"
 
-    private func changeWeek(by weeks: Int, direction: String) async {
-        weekStartDate = WeekDates.shift(weekStartDate: weekStartDate, byWeeks: weeks)
+        weekStartDate = target
         seenSuggestions.removeAll()
         env.analytics.track(
             AnalyticsEvents.Navigation.weekChange,
             category: AnalyticsEvents.Category.navigation,
             parameters: [
-                AnalyticsProperties.direction: direction,
                 AnalyticsProperties.weekStart: weekStartDate,
+                "chip_kind": kind,
             ]
         )
         await fetchWeek(showSpinner: true)
         await loadHistory()
+        await refreshChips()
     }
+
+    /// Changing week keeps you on the view you were already using, and vice versa.
+    func selectPane(_ next: WeekPane) { pane = next }
 
     // MARK: - Editing
 

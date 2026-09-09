@@ -192,7 +192,7 @@ struct HomeView: View {
     private var planTab: some View {
         Group {
             if let weekModel {
-                WeekView(
+                PlanView(
                     model: weekModel,
                     onOpenVideo: { videoContext = $0 },
                     onRequestAccount: { showingGuestUpgrade = true }
