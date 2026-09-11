@@ -7,6 +7,15 @@ final class BrandTests: XCTestCase {
 
     private let brand = Brand.current
 
+    /// The shipping brand with PDF import switched on — what iOS becomes the
+    /// day the import screen lands. The user half of `canImportPlan` is tested
+    /// against this so it stays covered while the capability is off.
+    private var withImport: Brand {
+        var b = Brand.current
+        b.capabilities.pdfImport = true
+        return b
+    }
+
     private func user(isGuest: Bool = false, pdfImport: Bool = false) -> User {
         User(
             id: "user_1",
@@ -16,11 +25,17 @@ final class BrandTests: XCTestCase {
         )
     }
 
-    func testKkbHasEveryCapabilitySwitchedOn() {
+    func testKkbCanDoEverythingExceptImportAPlan() {
         XCTAssertTrue(brand.capabilities.aiGeneration)
-        XCTAssertTrue(brand.capabilities.pdfImport)
         XCTAssertTrue(brand.capabilities.readyMadePlans)
         XCTAssertTrue(brand.capabilities.canEditPlan)
+    }
+
+    func testPdfImportIsOffUntilTheScreenExists() {
+        // The server can already switch the per-user flag on. Without the brand
+        // gate, those users would be offered an action with nothing behind it.
+        XCTAssertFalse(brand.capabilities.pdfImport)
+        XCTAssertFalse(canImportPlan(brand, for: user(pdfImport: true)))
     }
 
     func testLabelsSayWhatTheActionDoes() {
@@ -35,16 +50,16 @@ final class BrandTests: XCTestCase {
     // MARK: - canImportPlan: brand first, then user
 
     func testImportNeedsTheUserFlagSwitchedOn() {
-        XCTAssertFalse(canImportPlan(brand, for: user(pdfImport: false)))
-        XCTAssertTrue(canImportPlan(brand, for: user(pdfImport: true)))
+        XCTAssertFalse(canImportPlan(withImport, for: user(pdfImport: false)))
+        XCTAssertTrue(canImportPlan(withImport, for: user(pdfImport: true)))
     }
 
     func testGuestsNeverImport() {
-        XCTAssertFalse(canImportPlan(brand, for: user(isGuest: true, pdfImport: true)))
+        XCTAssertFalse(canImportPlan(withImport, for: user(isGuest: true, pdfImport: true)))
     }
 
     func testNoUserMeansNoImport() {
-        XCTAssertFalse(canImportPlan(brand, for: nil))
+        XCTAssertFalse(canImportPlan(withImport, for: nil))
     }
 
     func testABrandWithoutPdfImportRefusesEvenAFlaggedUser() {

@@ -78,8 +78,10 @@ struct PlanView: View {
                         )
                         model.isAIPromptOpen = true
                     },
-                    // iOS has no PDF import screen yet, so canImport is false and
-                    // this never runs. The seam is what will surface it.
+                    // Never runs while Brand.capabilities.pdfImport is false,
+                    // which is how the entry stays out of the menu. Building the
+                    // import screen means flipping that boolean and filling this
+                    // in — no other file changes.
                     onImport: {},
                     onShare: { Task { await onShare() } },
                     onClear: { model.isClearConfirmOpen = true },

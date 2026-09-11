@@ -23,7 +23,10 @@ public enum BrandID: String, Sendable {
 public struct BrandCapabilities: Hashable, Sendable {
     /// Whether the week can be filled by the AI generator at all.
     public var aiGeneration: Bool
-    /// Whether importing a plan from a PDF exists in this product.
+    /// Whether importing a plan from a PDF exists in this product. False on iOS
+    /// until the import screen is built: the server can already switch the
+    /// per-user flag on, and without this gate those users would be offered an
+    /// action with nothing behind it.
     public var pdfImport: Bool
     /// Whether the curated public meal plans are offered.
     public var readyMadePlans: Bool
@@ -90,7 +93,9 @@ public struct Brand: Hashable, Sendable {
         id: .kkb,
         capabilities: BrandCapabilities(
             aiGeneration: true,
-            pdfImport: true,
+            // Not built on iOS yet. One boolean is the whole of what turns it
+            // on when it is — no screen knows this flag exists.
+            pdfImport: false,
             readyMadePlans: true,
             canEditPlan: true
         ),
@@ -110,9 +115,9 @@ public struct Brand: Hashable, Sendable {
 /// enforces the user half independently — this is the UI half and is not a
 /// security boundary.
 ///
-/// iOS has no PDF import yet, so this currently gates an action that does not
-/// exist. That is the seam doing its job: the overflow entry appears when the
-/// screen is built, not when a brand check is added.
+/// Both halves are live logic even though the brand half is currently false on
+/// iOS: the user half is what the web app runs on today, and it is what this
+/// returns to as soon as the import screen exists.
 public func canImportPlan(_ brand: Brand, for user: User?) -> Bool {
     guard brand.capabilities.pdfImport else { return false }
     guard let user, !user.id.isEmpty else { return false }
