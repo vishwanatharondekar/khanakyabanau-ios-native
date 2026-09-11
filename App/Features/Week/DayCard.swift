@@ -129,10 +129,11 @@ struct MealRow: View {
 
     /// A slot with nothing in it.
     ///
-    /// The eyebrow already names the course, so the row says nothing else — an
-    /// instruction under it repeated the one word it was there to add. What is
-    /// left is the plus, centred in the space beside the thumbnail rather than
-    /// tucked at the row's edge, in the same tinted circle it already used.
+    /// The course name moves out of the eyebrow and into the label under the
+    /// plus, because an eyebrow pinned to the top-left had nothing to sit
+    /// against once the plus was centred — it read as a stray line rather than
+    /// the row's heading. One centred stack instead, in the eyebrow's own voice,
+    /// so it still reads as the row's label rather than as a sentence.
     ///
     /// Held at the thumbnail's height so filling a slot does not make the day
     /// jump.
@@ -147,27 +148,27 @@ struct MealRow: View {
                     emoji: type.emoji
                 )
 
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(type.displayName.eyebrow)
-                        .kkbFont(.sectionLabel)
-                        .foregroundStyle(type.chipText)
-
+                Group {
                     if canEdit {
-                        Image(systemName: "plus")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(Kkb.accentText)
-                            .frame(width: 40, height: 40)
-                            .background(Circle().fill(Kkb.terracottaSurface))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        VStack(spacing: 8) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(Kkb.accentText)
+                                .frame(width: 40, height: 40)
+                                .background(Circle().fill(Kkb.terracottaSurface))
+                            Text("Add \(type.displayName)".eyebrow)
+                                .kkbFont(.sectionLabel)
+                                .foregroundStyle(type.chipText)
+                        }
                     } else {
                         // On a day already gone there is nothing to add — a dash
                         // says empty without asking for anything.
                         Text("—")
                             .kkbFont(.bodyLarge)
                             .foregroundStyle(Kkb.textSecondary.opacity(0.8))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
+                .frame(maxWidth: .infinity)
                 .frame(height: 110)
             }
             .contentShape(Rectangle())
