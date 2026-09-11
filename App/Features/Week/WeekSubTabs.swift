@@ -12,6 +12,10 @@ import SwiftUI
 /// other picks the view of it. Matching shapes said they were the same kind of
 /// control, and stacking two rounded containers made the header read as
 /// decoration.
+///
+/// Set in the title register rather than the body one. At bodyMedium these read
+/// as two words of content that happened to be tappable; a tab title has to
+/// out-weigh the list beneath it to be read as navigation at all.
 struct WeekSubTabs: View {
     var active: WeekPane
     var onSelect: (WeekPane) -> Void
@@ -26,15 +30,17 @@ struct WeekSubTabs: View {
     private func tab(_ pane: WeekPane, _ title: String) -> some View {
         let isActive = pane == active
         return Button { onSelect(pane) } label: {
-            VStack(spacing: 8) {
+            VStack(spacing: 10) {
                 Text(title)
-                    .kkbFont(.bodyMedium)
-                    .fontWeight(isActive ? .semibold : .regular)
+                    .kkbFont(.titleMedium)
+                    .fontWeight(isActive ? .bold : .medium)
                     .foregroundStyle(isActive ? Kkb.accentText : Kkb.textSecondary)
                     .frame(maxWidth: .infinity)
                 Rectangle()
                     .fill(isActive ? Kkb.terracotta600 : Kkb.hairline)
-                    .frame(height: 2)
+                    // Thicker under the selected tab: with two labels this close
+                    // in weight, the rule is what settles which one you are on.
+                    .frame(height: isActive ? 3 : 2)
             }
             .contentShape(Rectangle())
         }
