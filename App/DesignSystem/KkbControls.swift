@@ -57,60 +57,6 @@ struct SegmentedTabs: View {
     }
 }
 
-/// One of the four actions above the week grid: AI · PDF · Shopping · Clear.
-/// Each has its own fill, border and foreground, straight from `ActionPill.kt:47`.
-struct ActionPill: View {
-    enum Variant {
-        case ai, pdf, shopping, clear
-
-        var colors: (start: Color, end: Color, border: Color, foreground: Color) {
-            switch self {
-            case .ai: (Kkb.marigold100, Kkb.marigold200, Kkb.marigold300, Kkb.marigold700)
-            case .pdf: (Kkb.sage100, Kkb.sage300.opacity(0.45), Kkb.sage300, Kkb.sage700)
-            case .shopping: (Kkb.terracotta100, Kkb.terracotta200.opacity(0.6),
-                             Kkb.terracotta300, Kkb.terracotta700)
-            case .clear: (Kkb.cream100, Kkb.cream200, Kkb.cream300, Kkb.ink700)
-            }
-        }
-    }
-
-    var variant: Variant
-    var systemImage: String
-    var title: String
-    var isEnabled: Bool = true
-    var action: () -> Void
-
-    var body: some View {
-        let palette = variant.colors
-        Button(action: action) {
-            VStack(spacing: 5) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 17, weight: .semibold))
-                Text(title).kkbFont(.labelSmall).fontWeight(.semibold)
-            }
-            .foregroundStyle(palette.foreground)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(LinearGradient(
-                        colors: [palette.start, palette.end],
-                        startPoint: .topLeading, endPoint: .bottomTrailing
-                    ))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(palette.border, lineWidth: 1.5)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .disabled(!isEnabled)
-        .opacity(isEnabled ? 1 : 0.5)
-        .accessibilityLabel(title)
-    }
-}
-
 /// The primary call to action: a terracotta→marigold gradient capsule.
 struct KkbPrimaryButton: View {
     var title: String

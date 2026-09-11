@@ -82,7 +82,9 @@ final class AiRepository {
 
     /// One full-week list. The server caches it against a hash of the plan, so an
     /// unchanged week costs no AI call and no guest quota.
-    func shoppingList(for plan: MealPlan) async throws -> ShoppingList {
+    /// The week's list. With `cachedOnly` this is a free probe — no AI call, no
+    /// guest allowance spent — answering `absent: true` when nothing is stored.
+    func shoppingList(for plan: MealPlan, cachedOnly: Bool = false) async throws -> ShoppingList {
         var flatNames: [String] = []
         var dayWise: [String: [String: String]] = [:]
 
@@ -103,7 +105,8 @@ final class AiRepository {
                 meals: flatNames,
                 dayWiseMeals: dayWise,
                 portions: 1,
-                weekStartDate: plan.weekStartDate
+                weekStartDate: plan.weekStartDate,
+                cachedOnly: cachedOnly
             )),
             as: ShoppingList.self
         )

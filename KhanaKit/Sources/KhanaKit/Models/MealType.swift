@@ -31,13 +31,27 @@ public enum MealType: String, CaseIterable, Codable, Sendable, Identifiable {
         }
     }
 
+    /// The emoji stand in for a dish with no photograph yet, which on a fresh
+    /// week is every dish — so they are the first thing anyone sees of the food.
+    /// A croissant, a taco and a cookie were describing a menu this app does not
+    /// plan.
+    ///
+    /// Chosen for what Unicode actually has. The falafel glyph is a plate of
+    /// fried savoury rounds, which is as close as the standard gets to medu vada
+    /// or bonda, so breakfast takes it and the evening snack moves to the
+    /// dumpling — momos being the street snack it most reads as here. Chai for
+    /// the morning, curry and rice for a thali-ish lunch, a pan of sabzi for
+    /// dinner.
+    ///
+    /// Nothing in Unicode reads as idli: there is no white savoury cake, and the
+    /// near misses are all Japanese rice shapes.
     public var emoji: String {
         switch self {
-        case .breakfast: "🥐"
-        case .morningSnack: "🍵"
-        case .lunch: "🌮"
-        case .eveningSnack: "🍪"
-        case .dinner: "🍽"
+        case .breakfast: "🧆"
+        case .morningSnack: "☕"
+        case .lunch: "🍛"
+        case .eveningSnack: "🥟"
+        case .dinner: "🥘"
         }
     }
 

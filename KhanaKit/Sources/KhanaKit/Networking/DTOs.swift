@@ -199,17 +199,40 @@ public struct ShoppingListRequest: Encodable, Sendable {
     /// Always 1 — Android has no portions UI, so neither does iOS.
     public var portions: Int
     public var weekStartDate: String
+    /// Ask only whether a list is already cached. Costs no AI call and spends no
+    /// guest allowance, so the Shopping tab can afford to run it on open.
+    public var cachedOnly: Bool
 
     public init(
         meals: [String],
         dayWiseMeals: [String: [String: String]],
         portions: Int = 1,
-        weekStartDate: String
+        weekStartDate: String,
+        cachedOnly: Bool = false
     ) {
         self.meals = meals
         self.dayWiseMeals = dayWiseMeals
         self.portions = portions
         self.weekStartDate = weekStartDate
+        self.cachedOnly = cachedOnly
+    }
+}
+
+/// Week start dates only — deliberately not the plans. The chip strip needs to
+/// know that weeks three and four of an imported multi-week plan exist; it does
+/// not need their meals.
+public struct WeeksWithPlansResponse: Decodable, Sendable {
+    public var weekStartDates: [String]
+
+    private enum CodingKeys: String, CodingKey { case weekStartDates }
+
+    public init(weekStartDates: [String] = []) {
+        self.weekStartDates = weekStartDates
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        weekStartDates = (try? c.decode([String].self, forKey: .weekStartDates)) ?? []
     }
 }
 

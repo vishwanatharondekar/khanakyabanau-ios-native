@@ -54,6 +54,7 @@ enum AnalyticsEvents {
         static let weekChange = "navigation_week_change"
         static let modeSwitch = "navigation_mode_switch"
         static let preferencesOpen = "navigation_preferences_open"
+        static let overflowOpen = "navigation_overflow_open"
     }
 
     enum Onboarding {

@@ -16,6 +16,28 @@ struct SlotTarget: Identifiable, Hashable {
     var id: String { "\(day.key)-\(type.key)" }
 }
 
+/// Which view of a week is showing. Both are children of the same week.
+enum WeekPane: Hashable {
+    case meals, shopping
+}
+
+/// Every state the Shopping pane can be in. All seven are real, and they want
+/// different UI — a guest at their ceiling needs an account, not a retry.
+enum ShoppingPaneState: Hashable {
+    /// Asking whether a list exists. Cheap, and spends nothing.
+    case probing
+    /// Actually building one. The slow, AI-backed path.
+    case loading
+    case ready
+    case error(String)
+    /// Guest out of free generations — offer an upgrade, not a retry.
+    case limit
+    /// The week has no dishes to derive a list from.
+    case empty
+    /// A week that has already happened, with no list stored from the time.
+    case past
+}
+
 @MainActor
 @Observable
 final class WeekViewModel {
@@ -29,10 +51,18 @@ final class WeekViewModel {
     private(set) var weekStartDate: String = WeekDates.format(WeekDates.currentMonday())
     private(set) var plan: MealPlan = .empty(weekStartDate: WeekDates.format(WeekDates.currentMonday()))
     private(set) var history: [MealPlan] = []
+    /// The weeks on offer: this week, next week, and any further week with a plan.
+    private(set) var chips: [WeekChip] = []
+    /// Earlier weeks that hold a plan, for stepping back through history.
+    private(set) var earlierWeeks: [String] = []
+    /// Which view of the week is showing.
+    var pane: WeekPane = .meals
 
     // Long-running AI work.
     private(set) var isGenerating = false
-    private(set) var isBuildingShoppingList = false
+    private(set) var shoppingState: ShoppingPaneState = .probing
+    /// The in-flight probe-or-generate, so a second open cannot start a second one.
+    private var shoppingTask: Task<Void, Never>?
 
     // Messages.
     var errorMessage: String?
@@ -58,6 +88,84 @@ final class WeekViewModel {
     var weekRangeLabel: String { WeekDates.rangeLabel(weekStartDate: weekStartDate) }
     var enabledTypes: [MealType] { env.settings.enabledTypes }
 
+    /// The displayed week has already happened.
+    var viewingPastWeek: Bool { isPastWeek(weekStartDate) }
+
+    /// Whether the user may change this week. Brand capability AND not history,
+    /// as one gate — so a read-only brand and a past week take the same path
+    /// through every write rather than each growing their own.
+    var canEdit: Bool { canEditPlan(Brand.current) && !viewingPastWeek }
+
+    /// Where a backwards step lands: the nearest earlier week that actually has
+    /// a plan, skipping gaps so the step never lands on nothing, and nil at the
+    /// oldest so it stops rather than walking into empty years.
+    var earlierWeek: String? {
+        nearestEarlierWeekWithPlan(weekStartDate, in: earlierWeeks)
+    }
+
+    func browseEarlier() async {
+        guard let earlierWeek else { return }
+        await selectWeek(earlierWeek)
+    }
+
+    func backToThisWeek() async {
+        await selectWeek(WeekDates.format(WeekDates.currentMonday()))
+    }
+
+    /// At least one enabled slot on some day has no dish.
+    var hasEmptySlots: Bool {
+        DayOfWeek.allCases.contains { day in
+            enabledTypes.contains { plan[day, $0].isEmpty }
+        }
+    }
+
+    /// No dish anywhere in the week.
+    var isEmptyWeek: Bool {
+        DayOfWeek.allCases.allSatisfy { day in
+            enabledTypes.allSatisfy { plan[day, $0].isEmpty }
+        }
+    }
+
+    /// Opens the generate prompt, if generating is possible at all.
+    ///
+    /// generateWithAI refuses on a week already gone, so opening the prompt
+    /// there walks the user through a dialog that silently does nothing at the
+    /// end.
+    func openAIPrompt() {
+        guard canEdit else { return }
+        isAIPromptOpen = true
+    }
+
+    /// Days holding at least one dish.
+    private var plannedDays: Set<DayOfWeek> {
+        Set(DayOfWeek.allCases.filter { day in
+            enabledTypes.contains { !plan[day, $0].isEmpty }
+        })
+    }
+
+    /// Most of what is left of the week is blank — what promotes the hero.
+    ///
+    /// Wider than `isEmptyWeek`, which vanished the moment anyone typed a single
+    /// dish and sent them hunting in the overflow for the one action that helps.
+    var isMostlyUnplanned: Bool {
+        guard !weekStartDate.isEmpty else { return false }
+        return KhanaKit.isMostlyUnplanned(
+            plannedDays: plannedDays,
+            pastDays: Set(pastDaysInWeek(weekStartDate))
+        )
+    }
+
+    func trackOverflowOpen() {
+        env.analytics.track(
+            AnalyticsEvents.Navigation.overflowOpen,
+            category: AnalyticsEvents.Category.navigation,
+            parameters: [
+                AnalyticsProperties.weekStart: weekStartDate,
+                "is_empty_week": isEmptyWeek,
+            ]
+        )
+    }
+
     var todayIndex: Int? { WeekDates.todayIndex(in: weekStartDate) }
     var tomorrowIndex: Int? { WeekDates.tomorrowIndex(in: weekStartDate) }
 
@@ -71,13 +179,31 @@ final class WeekViewModel {
         await env.settings.ensureMealSettings()
         await fetchWeek(showSpinner: true)
         await loadHistory()
+        await refreshChips()
     }
 
     func pullToRefresh() async {
         isRefreshing = true
         await env.videos.refresh()
+        await refreshChips()
         await fetchWeek(showSpinner: false)
         isRefreshing = false
+    }
+
+    /// Both directions of the week strip.
+    ///
+    /// Separate from the week load because an imported multi-week plan can
+    /// create weeks that need chips without changing the displayed week, so a
+    /// week-keyed fetch would not notice. `weeksWithPlans` swallows failure: the
+    /// strip falls back to this-week/next-week, which is what almost everyone
+    /// sees anyway, and a missing chip must not take the week itself down.
+    func refreshChips() async {
+        let thisWeek = WeekDates.format(WeekDates.currentMonday())
+        async let forward = env.meals.weeksWithPlans(from: thisWeek)
+        async let back = env.meals.weeksWithPlans(from: thisWeek, direction: "back")
+        let (upcoming, earlier) = await (forward, back)
+        chips = buildWeekChips(weeksWithPlans: upcoming)
+        earlierWeeks = earlier
     }
 
     private func fetchWeek(showSpinner: Bool) async {
@@ -123,23 +249,53 @@ final class WeekViewModel {
 
     // MARK: - Week navigation
 
-    func goToPreviousWeek() async { await changeWeek(by: -1, direction: "prev") }
-    func goToNextWeek() async { await changeWeek(by: 1, direction: "next") }
+    /// Go to a week by name rather than by direction.
+    ///
+    /// The old previous/next pager offered infinite navigation in both
+    /// directions to serve neither case — nobody pages backwards through a meal
+    /// planner and nobody plans three weeks out.
+    func selectWeek(_ target: String) async {
+        guard target != weekStartDate else { return }
+        // Which chip was tapped, or that the week is off the strip entirely —
+        // someone arriving from a months-old reminder.
+        let kind = chips.first { $0.weekStartDate == target }.map { chip -> String in
+            switch chip.kind {
+            case .thisWeek: "this"
+            case .nextWeek: "next"
+            case .dated: "dated"
+            }
+        } ?? "off_rails"
 
-    private func changeWeek(by weeks: Int, direction: String) async {
-        weekStartDate = WeekDates.shift(weekStartDate: weekStartDate, byWeeks: weeks)
+        // Shopping does not carry across weeks. A list is for one week's meals,
+        // and landing on another week's Shopping tab shows a loader over an
+        // answer nobody asked for — the reason to change week is to look at its
+        // meals. Set before the session is cleared so the pane unmounts and
+        // flushes its pending ticks; ShoppingListViewModel holds its own week
+        // and marks, so that flush lands on the week they belong to.
+        pane = .meals
+        weekStartDate = target
         seenSuggestions.removeAll()
+        // A late response from a week the user has already left must not
+        // overwrite what they are looking at now.
+        shoppingTask?.cancel()
+        shoppingSession = nil
+        shoppingState = .probing
         env.analytics.track(
             AnalyticsEvents.Navigation.weekChange,
             category: AnalyticsEvents.Category.navigation,
             parameters: [
-                AnalyticsProperties.direction: direction,
                 AnalyticsProperties.weekStart: weekStartDate,
+                "chip_kind": kind,
             ]
         )
         await fetchWeek(showSpinner: true)
         await loadHistory()
+        await refreshChips()
     }
+
+    /// Changing the view keeps the week you were looking at. The reverse does
+    /// not hold — see `selectWeek`, which sends you back to Meals.
+    func selectPane(_ next: WeekPane) { pane = next }
 
     // MARK: - Editing
 
@@ -148,6 +304,7 @@ final class WeekViewModel {
     /// A tap on an empty slot opens suggestions; a filled slot opens the rename
     /// dialog. Replacing a filled slot is the explicit swap button.
     func confirmEdit(target: SlotTarget, name: String, imageUrl: String? = nil) async {
+        guard canEdit else { return }
         let previous = plan[target.day, target.type]
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let wasEmpty = previous.isEmpty
@@ -194,6 +351,7 @@ final class WeekViewModel {
     /// Picking from the suggestion sheet. Carries the resolved thumbnail through so
     /// the tapped card doesn't shimmer back to a placeholder.
     func applySuggestion(target: SlotTarget, name: String, imageUrl: String?) async {
+        guard canEdit else { return }
         let wasEmpty = plan[target.day, target.type].isEmpty
         env.analytics.track(
             wasEmpty ? AnalyticsEvents.Meal.add : AnalyticsEvents.Meal.update,
@@ -218,6 +376,7 @@ final class WeekViewModel {
     }
 
     func clearWeek() async {
+        guard canEdit else { return }
         env.analytics.track(
             AnalyticsEvents.Meal.clearWeek,
             category: AnalyticsEvents.Category.mealPlanning,
@@ -283,6 +442,7 @@ final class WeekViewModel {
         moodCuisines: [String],
         restrictToIngredients: Bool = false
     ) async {
+        guard canEdit else { return }
         isAIPromptOpen = false
         isGenerating = true
 
@@ -340,29 +500,84 @@ final class WeekViewModel {
 
     // MARK: - Shopping list
 
-    func buildShoppingList() async {
-        guard !plan.allDishNames().isEmpty else {
-            errorMessage = "Please add some meals to your plan first"
-            return
+    /// The week's shopping list, fetched the moment the tab opens.
+    ///
+    /// Two steps, deliberately. A `cachedOnly` probe answers "is there already a
+    /// list for this week?" for free — no AI call, no guest allowance spent —
+    /// and only a miss starts a real generation. Without that split the tab
+    /// could not open itself: firing the generating call on navigation would
+    /// charge a guest for walking past.
+    ///
+    /// Nothing here blocks navigation: the loader renders inside the pane while
+    /// the tab bar stays live, and a generation the user walks away from still
+    /// finishes and still writes the server's cache, so coming back finds it.
+    func openShopping(isGuestAtLimit: Bool) async {
+        // Already showing this week's list — reopening the tab is not a reason
+        // to re-probe, let alone regenerate.
+        if shoppingSession?.weekStartDate == weekStartDate, shoppingState == .ready { return }
+        if let shoppingTask, !shoppingTask.isCancelled { _ = await shoppingTask.value; return }
+
+        let task = Task { @MainActor in
+            shoppingState = .probing
+
+            let probe = try? await env.ai.shoppingList(for: plan, cachedOnly: true)
+            let cached = probe.map { !$0.absent } ?? false
+
+            switch shoppingOpenOutcome(
+                weekStartDate: weekStartDate,
+                cached: cached,
+                hasDishes: !plan.allDishNames().isEmpty,
+                isGuestAtLimit: isGuestAtLimit
+            ) {
+            case .show:
+                if let probe { apply(probe) }
+            case .empty:
+                shoppingState = .empty
+            case .past:
+                shoppingState = .past
+            case .limit:
+                shoppingState = .limit
+            case .generate:
+                await generateShoppingList()
+            }
         }
-        isBuildingShoppingList = true
+        shoppingTask = task
+        await task.value
+        shoppingTask = nil
+    }
+
+    /// An explicit retry after a failure. Skips the probe — it already missed.
+    func retryShopping() async {
+        await generateShoppingList()
+    }
+
+    private func generateShoppingList() async {
+        shoppingState = .loading
+        // Fire at request time, not response, to mirror the webapp's behaviour
+        // and capture attempts that fail server-side.
         env.analytics.track(
             AnalyticsEvents.AI.extractIngredients,
             category: AnalyticsEvents.Category.aiFeatures,
             parameters: [AnalyticsProperties.weekStart: weekStartDate]
         )
         do {
-            let list = try await env.ai.shoppingList(for: plan)
-            shoppingSession = ShoppingSession(list: list, weekStartDate: weekStartDate)
-        } catch let APIError.guestLimitReached(message, _) {
-            guestLimitPrompt = message
-                ?? "You've used your free shopping lists. Create a free account for unlimited access."
+            apply(try await env.ai.shoppingList(for: plan))
+        } catch APIError.guestLimitReached {
+            // The ceiling and a real failure want different UI: an account, not
+            // a retry.
+            shoppingState = .limit
         } catch let error as APIError {
-            errorMessage = error.userMessage(fallback: "Failed to generate shopping list")
+            shoppingState = .error(
+                error.userMessage(fallback: "Failed to generate shopping list")
+            )
         } catch {
-            errorMessage = "Failed to generate shopping list"
+            shoppingState = .error("Failed to generate shopping list")
         }
-        isBuildingShoppingList = false
+    }
+
+    private func apply(_ list: ShoppingList) {
+        shoppingSession = ShoppingSession(list: list, weekStartDate: weekStartDate)
+        shoppingState = .ready
     }
 
     // MARK: - Suggestions

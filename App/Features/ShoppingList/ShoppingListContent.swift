@@ -3,13 +3,15 @@ import SwiftUI
 
 /// The market list: pick the days you're shopping for, tick off what you already
 /// have, then share, copy or export it.
-struct ShoppingListSheet: View {
+///
+/// A pane rather than a sheet. No title of its own: the week selector and the
+/// Shopping tab directly above already say which week this is and what it is,
+/// so a "Shopping list" heading inside the pane repeats both of them.
+struct ShoppingListContent: View {
     @Environment(\.app) private var env
-    @Environment(\.dismiss) private var dismiss
 
     var list: ShoppingList
     var weekStartDate: String
-    var onDismiss: () -> Void
 
     @State private var model: ShoppingListViewModel?
 
@@ -21,14 +23,13 @@ struct ShoppingListSheet: View {
                 ProgressView().tint(Kkb.terracotta500)
             }
         }
-        .task {
-            if model == nil {
-                model = ShoppingListViewModel(
-                    env: env, list: list, weekStartDate: weekStartDate
-                )
-            }
+        // Keyed on the week so switching weeks rebuilds the model rather than
+        // showing last week's ticks against this week's list.
+        .task(id: weekStartDate) {
+            model = ShoppingListViewModel(
+                env: env, list: list, weekStartDate: weekStartDate
+            )
         }
-        .presentationDragIndicator(.visible)
     }
 
     @ViewBuilder
@@ -71,39 +72,32 @@ struct ShoppingListSheet: View {
             }
         }
         .kkbToast($model.toast)
-        .onDisappear {
-            Task { await model.flushPending() }
-            onDismiss()
-        }
+        // The ticks are debounced 600ms, and as a tab there is no close button
+        // to flush on — the user simply navigates away.
+        .onDisappear { Task { await model.flushPending() } }
     }
 
+    /// Only the scope line survives from the sheet's header. "Market list" and
+    /// "Shopping list" both said what the tab above already says.
     private func header(_ model: ShoppingListViewModel) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("Market list".eyebrow)
-                    .kkbFont(.sectionLabel)
-                    .foregroundStyle(Kkb.accentText)
-                Spacer()
-                if model.list.cached {
-                    Text("CACHED")
-                        .kkbFont(.sectionLabel)
-                        .foregroundStyle(Kkb.sageText)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Capsule().fill(Kkb.sageSurface))
-                }
-            }
-            Text("Shopping list")
-                .kkbFont(.displayLarge)
-                .foregroundStyle(Kkb.textPrimary)
+        HStack {
             Text("Shopping for \(model.scopeLabel.isEmpty ? "no days" : model.scopeLabel)")
                 .kkbFont(.bodyMedium)
                 .foregroundStyle(Kkb.textSecondary)
+            Spacer()
+            if model.list.cached {
+                Text("CACHED")
+                    .kkbFont(.sectionLabel)
+                    .foregroundStyle(Kkb.sageText)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Kkb.sageSurface))
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)
-        .padding(.top, 20)
-        .padding(.bottom, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
     }
 
     private func dayChips(_ model: ShoppingListViewModel) -> some View {

@@ -93,6 +93,22 @@ public enum Endpoints {
         Endpoint(method: .put, path: "api/meals/\(weekStartDate)", body: Endpoint.json(body))
     }
 
+    /// Which nearby weeks already have a saved plan — upcoming from `from` by
+    /// default, or the ones before it with `direction=back`.
+    ///
+    /// Bounded on both sides (12 weeks each way) and served by the datastore's
+    /// built-in key index, so browsing history costs what the chip strip costs.
+    /// Deliberately not a range scan: plans are keyed
+    /// `mealPlans/{userId}_{weekStartDate}`, so the candidates are computable
+    /// and fetched by key, needing no composite index.
+    public static func weeksWithPlans(from: String, direction: String? = nil) -> Endpoint {
+        var query = [URLQueryItem(name: "from", value: from)]
+        if let direction {
+            query.append(URLQueryItem(name: "direction", value: direction))
+        }
+        return Endpoint(method: .get, path: "api/meals/weeks", query: query)
+    }
+
     /// Returns a bare JSON array, newest first, strictly before `targetWeek`.
     public static func history(targetWeek: String, limit: Int = 10) -> Endpoint {
         Endpoint(

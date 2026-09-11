@@ -1,8 +1,9 @@
 import KhanaKit
 import SwiftUI
 
-/// "The Week" — the planner grid. Seven day cards, each with a row per enabled
-/// course, above a row of four actions.
+/// The Meals pane of a week: seven day cards, each with a row per enabled
+/// course. The week selector, the view tabs and the actions live above it in
+/// `PlanView`, shared with Shopping.
 struct WeekView: View {
     @Environment(\.app) private var env
     @Environment(SessionStore.self) private var session
@@ -14,6 +15,11 @@ struct WeekView: View {
     /// Hitting a guest allowance should lead somewhere, so the limit prompt can
     /// open the same account-creation sheet the drawer offers.
     var onRequestAccount: () -> Void
+    /// Promoted into the grid only on an empty week; otherwise it lives in the
+    /// header's overflow.
+    var onGenerate: () -> Void = {}
+
+    @State private var isEarlierExpanded = false
 
     var body: some View {
         content(model)
@@ -64,13 +70,19 @@ struct WeekView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 18) {
-                        WeekHeader(
-                            label: model.weekRangeLabel,
-                            onPrevious: { Task { await model.goToPreviousWeek() } },
-                            onNext: { Task { await model.goToNextWeek() } }
-                        )
-
-                        actionRow(model)
+                        // canEdit as well: on a week already gone, generation is
+                        // refused, so offering it walks the user into a dialog
+                        // that does nothing at the end.
+                        if model.isMostlyUnplanned && model.canEdit {
+                            WeekHero(
+                                brand: Brand.current,
+                                generateLabel: primaryGenerateLabel(
+                                    Brand.current, hasEmptySlots: model.hasEmptySlots
+                                ),
+                                isWhollyEmpty: model.isEmptyWeek,
+                                onGenerate: onGenerate
+                            )
+                        }
 
                         if let error = model.errorMessage {
                             InlineErrorCard(message: error) {
@@ -78,9 +90,32 @@ struct WeekView: View {
                             }
                         }
 
-                        ForEach(Array(WeekDates.daysOfWeek(
+                        // Days already gone are not missing data — they are
+                        // days that have passed, and showing them as empty slots
+                        // offering to add a meal asks for something impossible.
+                        // Collapsing rows is not a change to the grid's
+                        // orientation; reorienting would be.
+                        let pastDays = pastDaysInWeek(model.weekStartDate)
+                        let entries = Array(WeekDates.daysOfWeek(
                             from: PlanDate(iso: model.weekStartDate) ?? WeekDates.currentMonday()
-                        ).enumerated()), id: \.element.day) { index, entry in
+                        ).enumerated())
+                        // A wholly past week keeps all seven: collapsing them
+                        // would leave the screen with nothing on it.
+                        let collapses = !pastDays.isEmpty && pastDays.count < entries.count
+
+                        if collapses {
+                            EarlierDaysToggle(
+                                count: pastDays.count,
+                                isExpanded: $isEarlierExpanded
+                            )
+                        }
+
+                        ForEach(
+                            entries.filter { collapses && !isEarlierExpanded
+                                ? !pastDays.contains($0.element.day)
+                                : true },
+                            id: \.element.day
+                        ) { index, entry in
                             WeekDaySection(
                                 day: entry.day,
                                 date: entry.date,
@@ -89,6 +124,7 @@ struct WeekView: View {
                                 isToday: model.todayIndex == index,
                                 isTomorrow: model.tomorrowIndex == index,
                                 isResolvingImages: model.isResolvingImages,
+                                canEdit: model.canEdit && !pastDays.contains(entry.day),
                                 videoURL: { env.videos.url(for: $0) },
                                 onTapRow: { type in
                                     // An empty row has no dish to watch, so it
@@ -117,10 +153,10 @@ struct WeekView: View {
                 .refreshable { await model.pullToRefresh() }
             }
 
+            // Shopping is not here any more: it renders its own loader inside
+            // its pane, because building a list must not block navigation.
             if model.isGenerating {
                 FullScreenLoader(message: "Cooking up suggestions")
-            } else if model.isBuildingShoppingList {
-                FullScreenLoader(message: "Building shopping list")
             }
         }
         .sheet(item: $model.editing) { target in
@@ -161,134 +197,35 @@ struct WeekView: View {
                 onCancel: { model.isAIPromptOpen = false }
             )
         }
-        .sheet(item: $model.shoppingSession) { session in
-            ShoppingListSheet(
-                list: session.list,
-                weekStartDate: session.weekStartDate,
-                onDismiss: { model.shoppingSession = nil }
-            )
-        }
-        .alert("Clear all meals", isPresented: $model.isClearConfirmOpen) {
-            Button("Cancel", role: .cancel) {}
-            Button("Clear", role: .destructive) { Task { await model.clearWeek() } }
-        } message: {
-            Text("Are you sure you want to clear all meals for this week? This action cannot be undone.")
-        }
-        .alert(
-            "Register to Continue",
-            isPresented: Binding(
-                get: { model.guestLimitPrompt != nil },
-                set: { if !$0 { model.guestLimitPrompt = nil } }
-            )
-        ) {
-            Button("Create free account") {
-                model.guestLimitPrompt = nil
-                onRequestAccount()
-            }
-            Button("Not now", role: .cancel) { model.guestLimitPrompt = nil }
-        } message: {
-            Text(model.guestLimitPrompt ?? "")
-        }
         .kkbToast($model.toast)
-    }
-
-    private func actionRow(_ model: WeekViewModel) -> some View {
-        HStack(spacing: 10) {
-            ActionPill(
-                variant: .ai,
-                systemImage: "sparkles",
-                title: "AI"
-            ) {
-                env.analytics.track(
-                    AnalyticsEvents.Mood.open, category: AnalyticsEvents.Category.mood
-                )
-                model.isAIPromptOpen = true
-            }
-            ActionPill(variant: .pdf, systemImage: "doc.richtext", title: "PDF") {
-                Task { await exportPDF(model) }
-            }
-            ActionPill(
-                variant: .shopping,
-                systemImage: "cart",
-                title: "Shopping"
-            ) {
-                Task { await model.buildShoppingList() }
-            }
-            ActionPill(variant: .clear, systemImage: "trash", title: "Clear") {
-                model.isClearConfirmOpen = true
-            }
-        }
-    }
-
-    private func exportPDF(_ model: WeekViewModel) async {
-        env.analytics.track(
-            AnalyticsEvents.PDF.generateMealPlan,
-            category: AnalyticsEvents.Category.pdf,
-            parameters: [AnalyticsProperties.weekStart: model.weekStartDate]
-        )
-        let language = env.settings.language.language
-        let translations = await env.translations.translations(
-            for: language, texts: model.plan.allDishNames()
-        )
-        guard let url = MealPlanPDF.render(
-            plan: model.plan,
-            enabledTypes: model.enabledTypes,
-            weekRangeLabel: model.weekRangeLabel,
-            translations: translations,
-            language: language,
-            videoURL: { env.videos.url(for: $0) }
-        ) else {
-            model.errorMessage = "Failed to generate PDF"
-            return
-        }
-        env.analytics.track(
-            AnalyticsEvents.PDF.downloadMealPlan, category: AnalyticsEvents.Category.pdf
-        )
-        SharePresenter.present(items: [url])
     }
 }
 
-/// ← week range → header.
-private struct WeekHeader: View {
-    var label: String
-    var onPrevious: () -> Void
-    var onNext: () -> Void
+/// One line standing in for the days of this week that have already passed.
+///
+/// They still open — "what did we have on Monday?" is worth answering — but
+/// they no longer take a card each, and an "Add a meal" prompt each, to say
+/// that nothing can be done about them.
+private struct EarlierDaysToggle: View {
+    var count: Int
+    @Binding var isExpanded: Bool
 
     var body: some View {
-        PaperCard(cornerRadius: 28, padding: 16) {
-            HStack(spacing: 12) {
-                navButton(systemImage: "chevron.left", label: "Previous week", action: onPrevious)
-                VStack(spacing: 3) {
-                    Text("THE WEEK OF")
-                        .kkbFont(.sectionLabel)
-                        .tracking(4)
-                        .foregroundStyle(Kkb.accentText)
-                    Text(label)
-                        .kkbFont(.displayMedium)
-                        .foregroundStyle(Kkb.textPrimary)
-                        .editorialHighlight()
-                        .minimumScaleFactor(0.7)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity)
-                navButton(systemImage: "chevron.right", label: "Next week", action: onNext)
+        Button { isExpanded.toggle() } label: {
+            HStack(spacing: 6) {
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 13, weight: .semibold))
+                Text(count == 1
+                     ? "1 earlier day this week"
+                     : "\(count) earlier days this week")
+                    .kkbFont(.bodyMedium)
+                Spacer()
             }
-        }
-    }
-
-    private func navButton(
-        systemImage: String,
-        label: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Kkb.ink700)
-                .frame(width: 40, height: 40)
-                .background(Circle().fill(Kkb.cream100))
+            .foregroundStyle(Kkb.textSecondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(label)
     }
 }

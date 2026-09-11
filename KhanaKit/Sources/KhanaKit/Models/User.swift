@@ -1,5 +1,21 @@
 import Foundation
 
+/// Per-user feature switches from the profile endpoint. Login, register and
+/// guest responses omit the object entirely, so every flag defaults to off: a
+/// missing answer must never read as a granted capability.
+public struct UserFeatures: Codable, Hashable, Sendable {
+    public var pdfImport: Bool
+
+    public init(pdfImport: Bool = false) {
+        self.pdfImport = pdfImport
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        pdfImport = (try? c.decode(Bool.self, forKey: .pdfImport)) ?? false
+    }
+}
+
 public struct User: Codable, Hashable, Sendable, Identifiable {
     public var id: String
     public var email: String?
@@ -15,6 +31,8 @@ public struct User: Codable, Hashable, Sendable, Identifiable {
     public var shoppingListUsageCount: Int
     /// Server-supplied ceilings; absent for registered users, who are unlimited.
     public var guestUsageLimits: GuestUsageLimits?
+    /// Only populated by `GET /api/auth/profile`.
+    public var features: UserFeatures
 
     public init(
         id: String,
@@ -26,7 +44,8 @@ public struct User: Codable, Hashable, Sendable, Identifiable {
         dietaryPreferences: DietaryPreferences? = nil,
         aiUsageCount: Int = 0,
         shoppingListUsageCount: Int = 0,
-        guestUsageLimits: GuestUsageLimits? = nil
+        guestUsageLimits: GuestUsageLimits? = nil,
+        features: UserFeatures = UserFeatures()
     ) {
         self.id = id
         self.email = email
@@ -38,6 +57,7 @@ public struct User: Codable, Hashable, Sendable, Identifiable {
         self.aiUsageCount = aiUsageCount
         self.shoppingListUsageCount = shoppingListUsageCount
         self.guestUsageLimits = guestUsageLimits
+        self.features = features
     }
 
     public init(from decoder: any Decoder) throws {
@@ -52,6 +72,7 @@ public struct User: Codable, Hashable, Sendable, Identifiable {
         aiUsageCount = (try? c.decode(Int.self, forKey: .aiUsageCount)) ?? 0
         shoppingListUsageCount = (try? c.decode(Int.self, forKey: .shoppingListUsageCount)) ?? 0
         guestUsageLimits = try? c.decode(GuestUsageLimits.self, forKey: .guestUsageLimits)
+        features = (try? c.decode(UserFeatures.self, forKey: .features)) ?? UserFeatures()
     }
 
     /// Remaining free AI generations, or nil when the user is unlimited.

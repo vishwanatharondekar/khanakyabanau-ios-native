@@ -1,6 +1,24 @@
 import KhanaKit
 import SwiftUI
 
+/// Which preference screen is open. Declared here rather than beside its caller
+/// because the caller has changed twice now — drawer, then Me — and the sheet it
+/// selects has not.
+enum SettingsScreen: String, Identifiable {
+    case dietary, meals, language, prepReminder
+    var id: String { rawValue }
+
+    /// Sent as the `screen` property on `navigation_preferences_open`.
+    var analyticsName: String {
+        switch self {
+        case .dietary: "dietary"
+        case .meals: "meals"
+        case .language: "language"
+        case .prepReminder: "prep_reminder"
+        }
+    }
+}
+
 /// The four preference screens. Each is a `SheetScaffold` with its own eyebrow and
 /// title, matching Android's settings dialogs one for one.
 struct SettingsSheet: View {
