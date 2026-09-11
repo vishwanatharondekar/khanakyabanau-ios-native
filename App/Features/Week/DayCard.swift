@@ -120,8 +120,62 @@ struct MealRow: View {
     var onVideo: () -> Void
 
     var body: some View {
+        if meal.isEmpty {
+            emptySlot
+        } else {
+            filledRow
+        }
+    }
+
+    /// A slot with nothing in it.
+    ///
+    /// Centred, and without the thumbnail or the trailing plus the filled row
+    /// carries. A 110pt placeholder image for a dish that does not exist was the
+    /// loudest thing on a blank week, and nothing can be centred horizontally
+    /// while it sits alongside. What is left is one target saying what it does.
+    ///
+    /// Held at the thumbnail's height so filling a slot does not make the day
+    /// jump.
+    private var emptySlot: some View {
+        Button(action: { if canEdit { onTap() } }) {
+            VStack(spacing: 8) {
+                if canEdit {
+                    Image(systemName: "plus")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Kkb.accentText.opacity(0.7))
+                }
+                // Names the course rather than the mechanism: this line is the
+                // one anyone actually reads, so it says which meal it will
+                // fill.
+                //
+                // Sans rather than the handwritten face the other empty states
+                // use — those whisper that something is absent, and this is an
+                // instruction. Regular weight and 0.8 ink: 4.74:1 against the
+                // card, which is recessive while staying above the 4.5:1 floor
+                // for text this size. Colour cannot go further without dropping
+                // under it, so the weight carries the rest.
+                //
+                // On a day already gone there is nothing to add — a dash says
+                // empty without asking for anything.
+                Text(canEdit ? "Add \(type.displayName)" : "—")
+                    .kkbFont(.bodyLarge)
+                    .foregroundStyle(Kkb.textSecondary.opacity(0.8))
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 110)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(
+            canEdit
+                ? "Add a \(type.displayName.lowercased()) for \(day.displayName)"
+                : "\(type.displayName) on \(day.displayName), empty"
+        )
+    }
+
+    private var filledRow: some View {
         HStack(spacing: 12) {
-            Button(action: { if canEdit || !meal.isEmpty { onTap() } }) {
+            Button(action: onTap) {
                 // Top, not centre: a two- or three-line dish name should grow
                 // downwards from the thumbnail's top edge rather than push the
                 // eyebrow up away from it.
@@ -130,7 +184,7 @@ struct MealRow: View {
                         imageUrl: meal.imageUrl,
                         size: 110,
                         cornerRadius: 18,
-                        isResolving: isResolvingImages && meal.imageUrl == nil && !meal.isEmpty,
+                        isResolving: isResolvingImages && meal.imageUrl == nil,
                         emoji: type.emoji
                     )
 
@@ -139,37 +193,10 @@ struct MealRow: View {
                             .kkbFont(.sectionLabel)
                             .foregroundStyle(type.chipText)
 
-                        if meal.isEmpty {
-                            // Names the course rather than the mechanism.
-                            // "Pick a dish" was the same six words on all five
-                            // rows; this line is the one anyone actually reads,
-                            // so it should say which meal it is offering to
-                            // fill.
-                            //
-                            // Sans rather than the handwritten face the other
-                            // empty states use: those whisper that something is
-                            // absent, and this one is an instruction. A script
-                            // face on an action reads as decoration.
-                            //
-                            // On a day already gone there is nothing to add —
-                            // a dash says empty without asking for anything.
-                            // 0.8, not full ink: sans at full strength
-                            // measures 8:1 against the card and shouts over the
-                            // dish names it sits among. This lands at 4.74:1 —
-                            // a placeholder rather than content, and still above
-                            // the 4.5:1 floor for text this size. The
-                            // handwritten version it replaced was 2.97:1, which
-                            // was pretty and not really readable.
-                            Text(canEdit ? "Add \(type.displayName)" : "—")
-                                .kkbFont(.bodyLarge)
-                                .fontWeight(.medium)
-                                .foregroundStyle(Kkb.textSecondary.opacity(0.8))
-                        } else {
-                            Text(meal.name)
-                                .kkbFont(.displaySmall)
-                                .foregroundStyle(Kkb.textPrimary)
-                                .multilineTextAlignment(.leading)
-                        }
+                        Text(meal.name)
+                            .kkbFont(.displaySmall)
+                            .foregroundStyle(Kkb.textPrimary)
+                            .multilineTextAlignment(.leading)
 
                         HStack(spacing: 6) {
                             if let prep = meal.validPrep, prep.maxLeadTimeMinutes > 0 {
@@ -186,60 +213,40 @@ struct MealRow: View {
             controls
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(
-            meal.isEmpty
-                ? "\(type.displayName) on \(day.displayName), empty"
-                : "\(type.displayName) on \(day.displayName), \(meal.name)"
-        )
+        .accessibilityLabel("\(type.displayName) on \(day.displayName), \(meal.name)")
     }
 
-    @ViewBuilder
+    /// The filled row's controls. The empty state has its own single target,
+    /// so there is no empty arm here.
     private var controls: some View {
-        if meal.isEmpty {
-            // Nothing at all when read-only. A disabled button would read as
-            // broken rather than deliberate — the point is that you cannot
-            // change what you already ate, not that the screen is failing.
+        VStack(spacing: 8) {
+            circleButton(
+                systemImage: "play.rectangle",
+                tint: videoURL != nil ? Kkb.sageText : Kkb.textSecondary,
+                fill: videoURL != nil ? Kkb.sageSurface : Kkb.surfaceSunken,
+                border: videoURL != nil ? Kkb.sage300 : Kkb.hairline,
+                label: videoURL != nil ? "Watch recipe video" : "Add a recipe video",
+                action: onVideo
+            )
+            // Watching how something was cooked is not editing it, so the
+            // video control above stays; these two go.
             if canEdit {
-                Button(action: onTap) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Kkb.accentText)
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(Kkb.terracottaSurface))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Add a \(type.displayName.lowercased()) for \(day.displayName)")
-            }
-        } else {
-            VStack(spacing: 8) {
                 circleButton(
-                    systemImage: "play.rectangle",
-                    tint: videoURL != nil ? Kkb.sageText : Kkb.textSecondary,
-                    fill: videoURL != nil ? Kkb.sageSurface : Kkb.surfaceSunken,
-                    border: videoURL != nil ? Kkb.sage300 : Kkb.hairline,
-                    label: videoURL != nil ? "Watch recipe video" : "Add a recipe video",
-                    action: onVideo
+                    systemImage: "arrow.triangle.2.circlepath",
+                    tint: Kkb.textSecondary,
+                    fill: Kkb.cream100,
+                    border: Kkb.hairline,
+                    label: "Switch meal",
+                    action: onSwap
                 )
-                // Watching how something was cooked is not editing it, so the
-                // video control above stays; these two go.
-                if canEdit {
-                    circleButton(
-                        systemImage: "arrow.triangle.2.circlepath",
-                        tint: Kkb.textSecondary,
-                        fill: Kkb.cream100,
-                        border: Kkb.hairline,
-                        label: "Switch meal",
-                        action: onSwap
-                    )
-                    circleButton(
-                        systemImage: "pencil",
-                        tint: Kkb.textSecondary,
-                        fill: Kkb.cream100,
-                        border: Kkb.hairline,
-                        label: "Edit meal",
-                        action: onEdit
-                    )
-                }
+                circleButton(
+                    systemImage: "pencil",
+                    tint: Kkb.textSecondary,
+                    fill: Kkb.cream100,
+                    border: Kkb.hairline,
+                    label: "Edit meal",
+                    action: onEdit
+                )
             }
         }
     }
