@@ -129,40 +129,47 @@ struct MealRow: View {
 
     /// A slot with nothing in it.
     ///
-    /// Centred, and without the thumbnail or the trailing plus the filled row
-    /// carries. A 110pt placeholder image for a dish that does not exist was the
-    /// loudest thing on a blank week, and nothing can be centred horizontally
-    /// while it sits alongside. What is left is one target saying what it does.
+    /// The eyebrow already names the course, so the row says nothing else — an
+    /// instruction under it repeated the one word it was there to add. What is
+    /// left is the plus, centred in the space beside the thumbnail rather than
+    /// tucked at the row's edge, in the same tinted circle it already used.
     ///
     /// Held at the thumbnail's height so filling a slot does not make the day
     /// jump.
     private var emptySlot: some View {
         Button(action: { if canEdit { onTap() } }) {
-            VStack(spacing: 8) {
-                if canEdit {
-                    Image(systemName: "plus")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Kkb.accentText.opacity(0.7))
+            HStack(alignment: .top, spacing: 12) {
+                MealThumbnail(
+                    imageUrl: meal.imageUrl,
+                    size: 110,
+                    cornerRadius: 18,
+                    isResolving: false,
+                    emoji: type.emoji
+                )
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(type.displayName.eyebrow)
+                        .kkbFont(.sectionLabel)
+                        .foregroundStyle(type.chipText)
+
+                    if canEdit {
+                        Image(systemName: "plus")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(Kkb.accentText)
+                            .frame(width: 40, height: 40)
+                            .background(Circle().fill(Kkb.terracottaSurface))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        // On a day already gone there is nothing to add — a dash
+                        // says empty without asking for anything.
+                        Text("—")
+                            .kkbFont(.bodyLarge)
+                            .foregroundStyle(Kkb.textSecondary.opacity(0.8))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 }
-                // Names the course rather than the mechanism: this line is the
-                // one anyone actually reads, so it says which meal it will
-                // fill.
-                //
-                // Sans rather than the handwritten face the other empty states
-                // use — those whisper that something is absent, and this is an
-                // instruction. Regular weight and 0.8 ink: 4.74:1 against the
-                // card, which is recessive while staying above the 4.5:1 floor
-                // for text this size. Colour cannot go further without dropping
-                // under it, so the weight carries the rest.
-                //
-                // On a day already gone there is nothing to add — a dash says
-                // empty without asking for anything.
-                Text(canEdit ? "Add \(type.displayName)" : "—")
-                    .kkbFont(.bodyLarge)
-                    .foregroundStyle(Kkb.textSecondary.opacity(0.8))
+                .frame(height: 110)
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 110)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
