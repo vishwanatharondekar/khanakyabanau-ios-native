@@ -13,12 +13,27 @@ import SwiftUI
 /// control, and stacking two rounded containers made the header read as
 /// decoration.
 ///
-/// Set in the title register rather than the body one. At bodyMedium these read
-/// as two words of content that happened to be tappable; a tab title has to
-/// out-weigh the list beneath it to be read as navigation at all.
+/// Set in the product's label register: upper case, wide tracking. Weight alone
+/// did not carry it — a step from medium to bold between two short words is a
+/// difference of degree, and the eye reads it as the same text slightly darker.
+/// Upper case changes the shape of the words, which is a difference of kind, and
+/// the wide tracking is this product's own signature for a label that is not
+/// content.
+///
+/// Smaller than the body text it sits above, not larger. Capitals already read
+/// bigger than their point size, and a tab does not need to win on size once it
+/// has stopped looking like a sentence.
 struct WeekSubTabs: View {
     var active: WeekPane
     var onSelect: (WeekPane) -> Void
+
+    /// sectionLabel is the eyebrow style at 11pt/3 tracking. Sized up and
+    /// tracked in a little, it becomes a tab without inventing a second label
+    /// voice for the product. Built as a KkbTextStyle rather than a raw
+    /// `.system` font so it still scales with Dynamic Type.
+    private static let tabStyle = KkbTextStyle(
+        size: 13, weight: .semibold, tracking: 1.5, relativeTo: .subheadline
+    )
 
     var body: some View {
         HStack(spacing: 0) {
@@ -31,8 +46,8 @@ struct WeekSubTabs: View {
         let isActive = pane == active
         return Button { onSelect(pane) } label: {
             VStack(spacing: 10) {
-                Text(title)
-                    .kkbFont(.titleMedium)
+                Text(title.uppercased())
+                    .kkbFont(Self.tabStyle)
                     .fontWeight(isActive ? .bold : .medium)
                     .foregroundStyle(isActive ? Kkb.accentText : Kkb.textSecondary)
                     .frame(maxWidth: .infinity)
