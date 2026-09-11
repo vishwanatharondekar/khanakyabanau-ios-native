@@ -153,10 +153,17 @@ struct MealRow: View {
                             //
                             // On a day already gone there is nothing to add —
                             // a dash says empty without asking for anything.
+                            // 0.8, not full ink: sans at full strength
+                            // measures 8:1 against the card and shouts over the
+                            // dish names it sits among. This lands at 4.74:1 —
+                            // a placeholder rather than content, and still above
+                            // the 4.5:1 floor for text this size. The
+                            // handwritten version it replaced was 2.97:1, which
+                            // was pretty and not really readable.
                             Text(canEdit ? "Add \(type.displayName)" : "—")
                                 .kkbFont(.bodyLarge)
                                 .fontWeight(.medium)
-                                .foregroundStyle(Kkb.textSecondary)
+                                .foregroundStyle(Kkb.textSecondary.opacity(0.8))
                         } else {
                             Text(meal.name)
                                 .kkbFont(.displaySmall)
