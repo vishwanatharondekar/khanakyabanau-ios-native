@@ -100,6 +100,11 @@ struct PlanView: View {
                     )
                 }
             }
+            // Pinned to the toolbar's own height (its icons are 40pt frames).
+            // The actions are Meals-only, and without this the row collapses to
+            // the picker's height on Shopping and everything below it jumps on
+            // every tab switch.
+            .frame(minHeight: 40)
             .padding(.horizontal, 16)
 
             WeekSubTabs(active: model.pane, onSelect: model.selectPane)
