@@ -237,6 +237,13 @@ final class WeekViewModel {
             }
         } ?? "off_rails"
 
+        // Shopping does not carry across weeks. A list is for one week's meals,
+        // and landing on another week's Shopping tab shows a loader over an
+        // answer nobody asked for — the reason to change week is to look at its
+        // meals. Set before the session is cleared so the pane unmounts and
+        // flushes its pending ticks; ShoppingListViewModel holds its own week
+        // and marks, so that flush lands on the week they belong to.
+        pane = .meals
         weekStartDate = target
         seenSuggestions.removeAll()
         // A late response from a week the user has already left must not
@@ -257,7 +264,8 @@ final class WeekViewModel {
         await refreshChips()
     }
 
-    /// Changing week keeps you on the view you were already using, and vice versa.
+    /// Changing the view keeps the week you were looking at. The reverse does
+    /// not hold — see `selectWeek`, which sends you back to Meals.
     func selectPane(_ next: WeekPane) { pane = next }
 
     // MARK: - Editing
