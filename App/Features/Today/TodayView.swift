@@ -13,9 +13,45 @@ struct TodayView: View {
     var userName: String?
     var onPlanWeek: () -> Void = {}
 
+    @Environment(\.scenePhase) private var scenePhase
+    /// Re-read when the screen comes back rather than on a ticker. A phone put
+    /// down before lunch and picked up after it is the case that matters; a
+    /// screen watched across the boundary is not worth a running timer.
+    @State private var now = Date()
+    @State private var isEarlierExpanded = false
+
     var body: some View {
         content(model)
             .task { await model.loadIfNeeded() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { now = Date() }
+            }
+    }
+
+    @ViewBuilder
+    private func mealCard(
+        _ model: TodayViewModel,
+        _ type: MealType,
+        isUpNext: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if isUpNext {
+                Text("UP NEXT")
+                    .kkbFont(.sectionLabel)
+                    .foregroundStyle(Kkb.accentText)
+                    .padding(.leading, 4)
+            }
+            TodayMealCard(
+                type: type,
+                meal: model.today.meals[type],
+                showCalories: model.showCalories,
+                isResolvingImages: model.isResolvingImages,
+                onTap: {
+                    guard !model.today.meals[type].isEmpty else { return }
+                    onOpenMeal(model.today.day, type)
+                }
+            )
+        }
     }
 
     @ViewBuilder
@@ -43,17 +79,26 @@ struct TodayView: View {
                     if model.enabledTypes.allSatisfy({ model.today.meals[$0].isEmpty }) {
                         EmptyToday(onPlanWeek: onPlanWeek)
                     } else {
-                        ForEach(model.enabledTypes) { type in
-                            TodayMealCard(
-                                type: type,
-                                meal: model.today.meals[type],
-                                showCalories: model.showCalories,
-                                isResolvingImages: model.isResolvingImages,
-                                onTap: {
-                                    guard !model.today.meals[type].isEmpty else { return }
-                                    onOpenMeal(model.today.day, type)
-                                }
+                        let agenda = todayAgenda(enabledTypes: model.enabledTypes, at: now)
+
+                        // Meals whose hour has gone: one line, not five cards.
+                        // They still open — "what did I plan for breakfast?" is
+                        // fair at ten in the morning — they just stop being the
+                        // first thing the screen offers.
+                        if !agenda.earlier.isEmpty {
+                            EarlierTodayToggle(
+                                count: agenda.earlier.count,
+                                isExpanded: $isEarlierExpanded
                             )
+                            if isEarlierExpanded {
+                                ForEach(agenda.earlier) { type in
+                                    mealCard(model, type, isUpNext: false)
+                                }
+                            }
+                        }
+
+                        ForEach(agenda.upcoming) { type in
+                            mealCard(model, type, isUpNext: type == agenda.upNext)
                         }
                     }
 
@@ -172,5 +217,31 @@ struct TodayMealCard: View {
                 ? "\(type.displayName), no dish planned"
                 : "\(type.displayName), \(meal.name)"
         )
+    }
+}
+
+/// One line standing in for the meals whose hour has passed.
+///
+/// The same answer the week grid gives for days already gone: demoted, still
+/// reachable, and no longer asking to be the first thing you read.
+private struct EarlierTodayToggle: View {
+    var count: Int
+    @Binding var isExpanded: Bool
+
+    var body: some View {
+        Button { isExpanded.toggle() } label: {
+            HStack(spacing: 6) {
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 13, weight: .semibold))
+                Text(count == 1 ? "1 earlier today" : "\(count) earlier today")
+                    .kkbFont(.bodyMedium)
+                Spacer()
+            }
+            .foregroundStyle(Kkb.textSecondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
