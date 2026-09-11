@@ -60,6 +60,8 @@ public struct BrandLabels: Hashable, Sendable {
     public var emptyTodayCTA: String?
     /// Shown on an entirely empty week.
     public var emptyWeekTitle: String
+    /// Shown when most of what is left of the week is still blank.
+    public var mostlyEmptyWeekTitle: String
 
     public init(
         fillWeek: String,
@@ -67,7 +69,8 @@ public struct BrandLabels: Hashable, Sendable {
         importPlan: String,
         emptyTodayTitle: String,
         emptyTodayCTA: String?,
-        emptyWeekTitle: String
+        emptyWeekTitle: String,
+        mostlyEmptyWeekTitle: String
     ) {
         self.fillWeek = fillWeek
         self.regenerateWeek = regenerateWeek
@@ -75,6 +78,7 @@ public struct BrandLabels: Hashable, Sendable {
         self.emptyTodayTitle = emptyTodayTitle
         self.emptyTodayCTA = emptyTodayCTA
         self.emptyWeekTitle = emptyWeekTitle
+        self.mostlyEmptyWeekTitle = mostlyEmptyWeekTitle
     }
 }
 
@@ -105,7 +109,8 @@ public struct Brand: Hashable, Sendable {
             importPlan: "Import plan",
             emptyTodayTitle: "Nothing planned for today",
             emptyTodayCTA: "Plan your week",
-            emptyWeekTitle: "No meals yet this week"
+            emptyWeekTitle: "No meals yet this week",
+            mostlyEmptyWeekTitle: "Most of this week is still empty"
         )
     )
 }

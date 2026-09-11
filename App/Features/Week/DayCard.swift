@@ -140,10 +140,14 @@ struct MealRow: View {
                             .foregroundStyle(type.chipText)
 
                         if meal.isEmpty {
-                            // "write a dish" is an instruction, and on a day
-                            // already gone there is nothing to write — a dash
-                            // says empty without asking for anything.
-                            Text(canEdit ? "write a dish…" : "—")
+                            // "pick", not "write": the tap opens the
+                            // suggestion sheet, and writing your own is one
+                            // option inside it. Naming the hidden half
+                            // advertised the long way round.
+                            //
+                            // On a day already gone there is nothing to pick —
+                            // a dash says empty without asking for anything.
+                            Text(canEdit ? "pick a dish…" : "—")
                                 .kkbFont(.handwritten)
                                 .foregroundStyle(Kkb.textSecondary.opacity(0.8))
                         } else {

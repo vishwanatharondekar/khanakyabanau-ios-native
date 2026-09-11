@@ -70,12 +70,16 @@ struct WeekView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 18) {
-                        if model.isEmptyWeek {
+                        // canEdit as well: on a week already gone, generation is
+                        // refused, so offering it walks the user into a dialog
+                        // that does nothing at the end.
+                        if model.isMostlyUnplanned && model.canEdit {
                             WeekHero(
                                 brand: Brand.current,
                                 generateLabel: primaryGenerateLabel(
                                     Brand.current, hasEmptySlots: model.hasEmptySlots
                                 ),
+                                isWhollyEmpty: model.isEmptyWeek,
                                 onGenerate: onGenerate
                             )
                         }

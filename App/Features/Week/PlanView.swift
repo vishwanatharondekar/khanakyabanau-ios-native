@@ -76,7 +76,9 @@ struct PlanView: View {
                         generateLabel: primaryGenerateLabel(
                             brand, hasEmptySlots: model.hasEmptySlots
                         ),
-                        canGenerate: canGenerate(brand, for: session.user),
+                        // canEdit too: generation is refused on a week already
+                        // gone, so the entry would open a prompt that does nothing.
+                        canGenerate: canGenerate(brand, for: session.user) && model.canEdit,
                         canImport: canImportPlan(brand, for: session.user),
                         canEdit: canEditPlan(brand),
                         onGenerate: {
@@ -84,7 +86,7 @@ struct PlanView: View {
                                 AnalyticsEvents.Mood.open,
                                 category: AnalyticsEvents.Category.mood
                             )
-                            model.isAIPromptOpen = true
+                            model.openAIPrompt()
                         },
                         // Never runs while Brand.capabilities.pdfImport is
                         // false, which is how the entry stays out of the menu.
@@ -132,7 +134,7 @@ struct PlanView: View {
                             AnalyticsEvents.Mood.open,
                             category: AnalyticsEvents.Category.mood
                         )
-                        model.isAIPromptOpen = true
+                        model.openAIPrompt()
                     }
                 )
             case .shopping:

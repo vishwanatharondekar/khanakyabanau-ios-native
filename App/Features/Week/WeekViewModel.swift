@@ -119,11 +119,40 @@ final class WeekViewModel {
         }
     }
 
-    /// No dish anywhere in the week — this is what promotes the hero.
+    /// No dish anywhere in the week.
     var isEmptyWeek: Bool {
         DayOfWeek.allCases.allSatisfy { day in
             enabledTypes.allSatisfy { plan[day, $0].isEmpty }
         }
+    }
+
+    /// Opens the generate prompt, if generating is possible at all.
+    ///
+    /// generateWithAI refuses on a week already gone, so opening the prompt
+    /// there walks the user through a dialog that silently does nothing at the
+    /// end.
+    func openAIPrompt() {
+        guard canEdit else { return }
+        isAIPromptOpen = true
+    }
+
+    /// Days holding at least one dish.
+    private var plannedDays: Set<DayOfWeek> {
+        Set(DayOfWeek.allCases.filter { day in
+            enabledTypes.contains { !plan[day, $0].isEmpty }
+        })
+    }
+
+    /// Most of what is left of the week is blank — what promotes the hero.
+    ///
+    /// Wider than `isEmptyWeek`, which vanished the moment anyone typed a single
+    /// dish and sent them hunting in the overflow for the one action that helps.
+    var isMostlyUnplanned: Bool {
+        guard !weekStartDate.isEmpty else { return false }
+        return KhanaKit.isMostlyUnplanned(
+            plannedDays: plannedDays,
+            pastDays: Set(pastDaysInWeek(weekStartDate))
+        )
     }
 
     func trackOverflowOpen() {
