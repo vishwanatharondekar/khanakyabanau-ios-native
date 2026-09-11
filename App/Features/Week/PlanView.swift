@@ -65,31 +65,40 @@ struct PlanView: View {
                     onSelect: { week in Task { await model.selectWeek(week) } }
                 )
                 Spacer()
-                WeekActions(
-                    brand: brand,
-                    generateLabel: primaryGenerateLabel(brand, hasEmptySlots: model.hasEmptySlots),
-                    canGenerate: canGenerate(brand, for: session.user),
-                    canImport: canImportPlan(brand, for: session.user),
-                    canEdit: canEditPlan(brand),
-                    onGenerate: {
-                        env.analytics.track(
-                            AnalyticsEvents.Mood.open,
-                            category: AnalyticsEvents.Category.mood
-                        )
-                        model.isAIPromptOpen = true
-                    },
-                    // Never runs while Brand.capabilities.pdfImport is false,
-                    // which is how the entry stays out of the menu. Building the
-                    // import screen means flipping that boolean and filling this
-                    // in — no other file changes.
-                    onImport: {},
-                    onShare: { Task { await onShare() } },
-                    onClear: { model.isClearConfirmOpen = true },
-                    onBrowseEarlier: model.earlierWeek == nil
-                        ? nil
-                        : { Task { await model.browseEarlier() } },
-                    onOverflowOpened: model.trackOverflowOpen
-                )
+                // Meals only. Every action here acts on the week's dishes —
+                // Share exports the meal plan, and the overflow fills,
+                // regenerates or clears it. None of them mean anything while a
+                // shopping list is on screen, and the list has its own share,
+                // copy and PDF actions in its footer.
+                if model.pane == .meals {
+                    WeekActions(
+                        brand: brand,
+                        generateLabel: primaryGenerateLabel(
+                            brand, hasEmptySlots: model.hasEmptySlots
+                        ),
+                        canGenerate: canGenerate(brand, for: session.user),
+                        canImport: canImportPlan(brand, for: session.user),
+                        canEdit: canEditPlan(brand),
+                        onGenerate: {
+                            env.analytics.track(
+                                AnalyticsEvents.Mood.open,
+                                category: AnalyticsEvents.Category.mood
+                            )
+                            model.isAIPromptOpen = true
+                        },
+                        // Never runs while Brand.capabilities.pdfImport is
+                        // false, which is how the entry stays out of the menu.
+                        // Building the import screen means flipping that
+                        // boolean and filling this in — no other file changes.
+                        onImport: {},
+                        onShare: { Task { await onShare() } },
+                        onClear: { model.isClearConfirmOpen = true },
+                        onBrowseEarlier: model.earlierWeek == nil
+                            ? nil
+                            : { Task { await model.browseEarlier() } },
+                        onOverflowOpened: model.trackOverflowOpen
+                    )
+                }
             }
             .padding(.horizontal, 16)
 
@@ -136,9 +145,14 @@ struct PlanView: View {
                 }
             }
         }
-        // Both alerts hang off the header rather than the Meals pane: their
-        // triggers live in the overflow, which is reachable from Shopping too.
-        // Clear asks exactly once — the overflow entry opens this and does not
+        // Both alerts hang off PlanView rather than the Meals pane. Their
+        // triggers are Meals-only again now that the toolbar is, but PlanView
+        // is mounted for both panes and the pane is not — keeping them here is
+        // what stops an alert being raised against a view that isn't on screen,
+        // which is how Clear silently did nothing from the Shopping tab once
+        // before.
+        //
+        // Clear asks exactly once: the overflow entry opens this and does not
         // confirm inline as well.
         .alert("Clear all meals", isPresented: clearConfirmBinding) {
             Button("Cancel", role: .cancel) {}
