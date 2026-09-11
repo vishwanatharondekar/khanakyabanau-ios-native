@@ -31,13 +31,21 @@ public enum MealType: String, CaseIterable, Codable, Sendable, Identifiable {
         }
     }
 
+    /// The emoji stand in for a dish with no photograph yet, which on a fresh
+    /// week is every dish — so they are the first thing anyone sees of the food.
+    /// A croissant, a taco and a cookie were describing a menu this app does not
+    /// plan.
+    ///
+    /// Chosen for what Unicode actually has: flatbread for roti, paratha or
+    /// dosa; chai for the morning; curry and rice for a thali-ish lunch; a fried
+    /// round for vada or pakora; a pan of sabzi for dinner.
     public var emoji: String {
         switch self {
-        case .breakfast: "🥐"
-        case .morningSnack: "🍵"
-        case .lunch: "🌮"
-        case .eveningSnack: "🍪"
-        case .dinner: "🍽"
+        case .breakfast: "🫓"
+        case .morningSnack: "☕"
+        case .lunch: "🍛"
+        case .eveningSnack: "🧆"
+        case .dinner: "🥘"
         }
     }
 
