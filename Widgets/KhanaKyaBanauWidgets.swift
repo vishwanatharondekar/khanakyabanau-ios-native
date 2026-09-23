@@ -43,6 +43,10 @@ struct WidgetDayEntry: TimelineEntry {
     let tomorrow: WidgetDay?
     let isAuthenticated: Bool
     let container: WidgetContainer?
+    /// The size WidgetKit reports for this placement, or `.zero` where it gives
+    /// none. Lets the large family plan rows against its real height rather than
+    /// against the smallest phone's.
+    var displaySize: CGSize = .zero
 }
 
 struct SnapshotProvider: TimelineProvider {
@@ -55,7 +59,7 @@ struct SnapshotProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (WidgetDayEntry) -> Void) {
-        completion(entry(at: Date()))
+        completion(entry(at: Date(), displaySize: context.displaySize))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<WidgetDayEntry>) -> Void) {
@@ -69,24 +73,27 @@ struct SnapshotProvider: TimelineProvider {
 
         completion(
             Timeline(
-                entries: dates.map { entry(at: $0) },
+                entries: dates.map { entry(at: $0, displaySize: context.displaySize) },
                 policy: .after(WidgetTimeline.nextMidnight(after: now, calendar: calendar))
             )
         )
     }
 
-    private func entry(at date: Date) -> WidgetDayEntry {
+    private func entry(at date: Date, displaySize: CGSize) -> WidgetDayEntry {
         let container = WidgetContainer.shared()
         let snapshot = container.flatMap { WidgetSnapshotStore.read(from: $0) }
-        // The snapshot holds today and tomorrow in order, so this indexes rather
-        // than computing a weekday — which keeps it correct across a week
-        // rollover without recomputing a calendar here.
+        // Looked up by the entry's own date, never by position. The app writes
+        // the snapshot only when it runs, so the midnight entry — and every reload
+        // after it until the app is next opened — must find the new day in the
+        // window rather than re-render the one that was first when it was written.
+        let days = snapshot?.days(on: PlanDate.today(now: date))
         return WidgetDayEntry(
             date: date,
-            today: snapshot?.days.first,
-            tomorrow: snapshot?.days.dropFirst().first,
+            today: days?.today,
+            tomorrow: days?.tomorrow,
             isAuthenticated: snapshot?.isAuthenticated ?? false,
-            container: container
+            container: container,
+            displaySize: displaySize
         )
     }
 }
@@ -118,10 +125,12 @@ struct WidgetDayView: View {
             #else
                 WidgetShell(message: "Tap to set up", emphasis: true)
             #endif
-        } else if !entry.isAuthenticated || entry.today == nil {
+        } else if !entry.isAuthenticated {
             WidgetShell(message: "Tap to set up", emphasis: true)
-        } else if let today = entry.today, !today.hasAnyMeal,
-                  entry.tomorrow?.hasAnyMeal != true {
+        } else if entry.today == nil
+                    || (entry.today?.hasAnyMeal == false && entry.tomorrow?.hasAnyMeal != true) {
+            // `today == nil` while signed in is a snapshot older than its window:
+            // the app has not run for over a week. Opening it rewrites the window.
             WidgetShell(message: "Open the app to pick meals", emphasis: false)
         } else {
             WidgetDayContent(entry: entry, family: family)
@@ -174,6 +183,9 @@ enum KkbWidget {
 
     /// Android: `val size = 72.dp`.
     static let thumbnail: CGFloat = 72
+    /// The small family's ceiling. Diverges from Android, whose small widget is
+    /// wider relative to its text; here the name needs the width more.
+    static let smallThumbnail: CGFloat = 48
     /// Android: `val radius = 14.dp`.
     static let thumbnailRadius: CGFloat = 14
     /// Android: `Spacer(GlanceModifier.width(12.dp))`.
@@ -198,6 +210,36 @@ enum KkbWidget {
     /// One line of 11pt type, plus the stack's gap.
     static let glanceHeight: CGFloat = 21
 
+    /// The first row's dish name. One step up from `mealNameSize`: enough to lead
+    /// the eye without the row needing more height than its two-line name had.
+    static let heroNameSize: CGFloat = 16
+    /// Inset of the card behind the first row. Vertical padding is the only
+    /// height the emphasis costs, which is why it is small.
+    static let heroPadding: CGFloat = 6
+    static let heroExtraHeight: CGFloat = heroPadding * 2
+
+    /// The large family's feature block for the next meal: a photo twice the
+    /// size of the rows beneath it, and a name that leads the whole widget.
+    ///
+    /// No card behind it. Its own section and its size already set it apart, and
+    /// a panel on top of that made the widget look like it had a dialog open.
+    ///
+    /// 88pt rather than larger because the thumbnails are 256px — at 3x anything
+    /// much bigger goes soft — and because every point here is taken from the
+    /// rows beneath it.
+    static let featurePhoto: CGFloat = 88
+    static let featureNameSize: CGFloat = 20
+    static let featureHeight: CGFloat = featurePhoto
+    /// Row thumbnails beneath a feature block. Half its size, so the eye lands on
+    /// the next meal first; the rows under it are there to be scanned, not studied.
+    static let belowFeatureThumbnail: CGFloat = 44
+    /// The large family's "Today's done" line.
+    static let doneLineSize: CGFloat = 16
+    static let doneLineHeight: CGFloat = 22
+    /// The smallest row the large family will lay out below the feature block —
+    /// the 36pt thumbnail floor plus the row's padding.
+    static let minimumRowHeight: CGFloat = 36 + rowPadding * 2
+
     // MARK: - Colours
 
     /// Cream, warming towards marigold at the bottom-right.
@@ -218,4 +260,8 @@ enum KkbWidget {
     static let marigold100 = Color(red: 0.996, green: 0.941, blue: 0.780)
     static let ink600 = Color(red: 0.380, green: 0.322, blue: 0.278)
     static let ink900 = Color(red: 0.165, green: 0.122, blue: 0.090)
+    /// The first row's card. Translucent white rather than a palette tint, so it
+    /// reads as raised off the warm wash instead of as another coloured block
+    /// competing with the prep banner.
+    static let heroCard = Color.white.opacity(0.6)
 }

@@ -14,9 +14,23 @@ final class WidgetWindowTests: XCTestCase {
         XCTAssertTrue(WidgetWindow.covers(weekStartDate: "2026-08-31", today: today))
     }
 
-    /// Only because tomorrow is Saturday, still inside it — see the Sunday case.
-    func testNextWeekIsNotCoveredMidWeek() {
-        XCTAssertFalse(WidgetWindow.covers(weekStartDate: "2026-09-07", today: today))
+    /// The snapshot carries a week ahead, so next week is on the widget's books
+    /// every day, not only on a Sunday.
+    func testNextWeekIsCoveredMidWeek() {
+        XCTAssertTrue(WidgetWindow.covers(weekStartDate: "2026-09-07", today: today))
+    }
+
+    func testTheWeekAfterNextIsNotCovered() {
+        XCTAssertFalse(WidgetWindow.covers(weekStartDate: "2026-09-14", today: today))
+    }
+
+    /// Eight days from a Monday still ends on next Monday — two weeks, never three.
+    func testWindowSpansTwoWeeksEvenFromAMonday() {
+        let monday = PlanDate(year: 2026, month: 8, day: 31)
+        XCTAssertEqual(
+            WidgetWindow.weeks(from: monday).map(\.isoString),
+            ["2026-08-31", "2026-09-07"]
+        )
     }
 
     func testLastWeekIsNotCovered() {

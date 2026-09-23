@@ -14,6 +14,7 @@ enum AppRoute: Hashable {
 struct KhanaKyaBanauApp: App {
     @State private var env: AppEnvironment
     @State private var session: SessionStore
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         let environment = AppEnvironment()
@@ -29,6 +30,12 @@ struct KhanaKyaBanauApp: App {
                 // Both existing clients are light-only. iOS keeps a dark variant,
                 // but the palette is defined so brand hues never invert.
                 .tint(Kkb.accent)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { WidgetRefresh.schedule() }
+        }
+        .backgroundTask(.appRefresh(WidgetRefresh.taskIdentifier)) { [env] in
+            await WidgetRefresh.run(env)
         }
     }
 }

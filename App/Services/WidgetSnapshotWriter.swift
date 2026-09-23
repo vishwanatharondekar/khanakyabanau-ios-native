@@ -75,26 +75,23 @@ final class WidgetSnapshotWriter {
             return
         }
 
-        let today = PlanDate.today()
-        let tomorrow = today.adding(days: 1)
-
-        guard let todayPlan = try? await loadWeek(WeekDates.format(WeekDates.mondayOf(today)))
+        // The whole window, not just today and tomorrow: the extension rolls the
+        // day over by itself from this, so the widget stays right on mornings the
+        // app is not opened. The window always spans this week and next.
+        let weeks = WidgetWindow.weeks(from: PlanDate.today())
+        guard let first = weeks.first.map(WeekDates.format),
+              let thisWeek = try? await loadWeek(first)
         else { return }
 
-        // Six days a week this is the same document; only a Sunday needs the
-        // second fetch, and MealRepository caches it either way.
-        let tomorrowPlan: MealPlan
-        if WeekDates.mondayOf(tomorrow) == WeekDates.mondayOf(today) {
-            tomorrowPlan = todayPlan
-        } else if let next = try? await loadWeek(WeekDates.format(WeekDates.mondayOf(tomorrow))) {
-            tomorrowPlan = next
-        } else {
-            tomorrowPlan = todayPlan
+        // Next week is best-effort. Its days drop out of the snapshot if it fails,
+        // which shortens the window without touching today.
+        var plans = [first: thisWeek]
+        for week in weeks.dropFirst().map(WeekDates.format) {
+            plans[week] = try? await loadWeek(week)
         }
 
         var snapshot = WidgetSnapshot.build(
-            today: todayPlan,
-            tomorrow: tomorrowPlan,
+            weeks: plans,
             on: Date(),
             enabledTypes: settings.enabledTypes,
             isAuthenticated: true,
@@ -104,7 +101,7 @@ final class WidgetSnapshotWriter {
             }
         )
 
-        await cacheThumbnails(for: [todayPlan, tomorrowPlan], snapshot: &snapshot, in: container)
+        await cacheThumbnails(for: Array(plans.values), snapshot: &snapshot, in: container)
 
         try? WidgetSnapshotStore.write(snapshot, to: container)
         WidgetSnapshotStore.pruneThumbnails(
@@ -124,13 +121,18 @@ final class WidgetSnapshotWriter {
         snapshot: inout WidgetSnapshot,
         in container: WidgetContainer
     ) async {
+        // Only rows the snapshot actually carries. The plans also hold days
+        // already past and days beyond the window, whose images would be
+        // downloaded only to be pruned straight after.
+        let wanted = Set(snapshot.days.flatMap { $0.meals.compactMap(\.thumbnailKey) })
         var urlsByKey: [String: String] = [:]
         for plan in plans {
             for day in plan.meals.values {
                 for type in MealType.allCases {
                     let meal = day[type]
                     guard let url = meal.imageUrl, !url.isEmpty else { continue }
-                    urlsByKey[WidgetSnapshotStore.thumbnailKey(forImageURL: url)] = url
+                    let key = WidgetSnapshotStore.thumbnailKey(forImageURL: url)
+                    if wanted.contains(key) { urlsByKey[key] = url }
                 }
             }
         }

@@ -39,13 +39,23 @@
 		<key>UIColorName</key>
 		<string>LaunchBackground</string>
 	</dict>
-	<!-- No UIBackgroundModes. Remote push is not shipped in 1.0: the bundled
+	<!-- Background fetch only, for WidgetRefresh: it catches plan edits made on
+	     the web or another device while the app is closed. Deliberately NOT
+	     remote-notification: remote push is not shipped in 1.0 (the bundled
 	     GoogleService-Info.plist is a placeholder, so PushService.configure()
-	     bails and never registers for APNs. Declaring the background mode
-	     without a matching aps-environment entitlement earns a "Missing Push
-	     Notification Entitlement" warning on every upload. Prep reminders are
-	     local notifications and need none of this. Restore this array together
-	     with App/KhanaKyaBanau-Push.entitlements when push actually ships. -->
+	     bails and never registers for APNs), and declaring that mode without a
+	     matching aps-environment entitlement earns a "Missing Push Notification
+	     Entitlement" warning on every upload. Add it together with
+	     App/KhanaKyaBanau-Push.entitlements when push actually ships. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
+	<!-- Must match WidgetRefresh.taskIdentifier. -->
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>in.khanakyabanau.app.widget-refresh</string>
+	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

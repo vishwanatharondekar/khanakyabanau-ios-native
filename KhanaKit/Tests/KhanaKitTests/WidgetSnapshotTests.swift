@@ -160,4 +160,93 @@ final class WidgetSnapshotTests: XCTestCase {
         formatter.formatOptions = [.withInternetDateTime]
         return formatter.date(from: iso)!
     }
+
+    // MARK: - The dated window
+
+    /// The reported bug: the app was not opened after midnight, and the widget
+    /// kept rendering the snapshot's first day. Looking days up by date lets the
+    /// widget move on to the next day without the app.
+    func testWindowRollsOverWithoutARewrite() {
+        var thisWeek = MealPlan(weekStartDate: "2026-08-31")
+        thisWeek.meals["friday"] = DayMeals(dinner: meal("Dal"))
+        thisWeek.meals["saturday"] = DayMeals(lunch: meal("Rajma"))
+        thisWeek.meals["sunday"] = DayMeals(dinner: meal("Khichdi"))
+
+        let snapshot = WidgetSnapshot.build(
+            weeks: ["2026-08-31": thisWeek],
+            on: date("2026-09-04T21:00:00+05:30"),
+            enabledTypes: [.breakfast, .lunch, .dinner],
+            isAuthenticated: true,
+            calendar: kolkata
+        )
+
+        let saturday = snapshot.days(on: PlanDate(year: 2026, month: 9, day: 5))
+        XCTAssertEqual(saturday.today?.meals.map(\.name), ["Rajma"])
+        XCTAssertEqual(saturday.tomorrow?.meals.map(\.name), ["Khichdi"])
+    }
+
+    func testWindowSpansIntoNextWeeksPlan() {
+        let thisWeek = MealPlan(weekStartDate: "2026-08-31")
+        var nextWeek = MealPlan(weekStartDate: "2026-09-07")
+        nextWeek.meals["monday"] = DayMeals(breakfast: meal("Upma"))
+
+        let snapshot = WidgetSnapshot.build(
+            weeks: ["2026-08-31": thisWeek, "2026-09-07": nextWeek],
+            on: date("2026-09-04T09:00:00+05:30"),
+            enabledTypes: [.breakfast, .lunch, .dinner],
+            isAuthenticated: true,
+            calendar: kolkata
+        )
+
+        XCTAssertEqual(snapshot.days.count, WidgetSnapshot.windowDays)
+        XCTAssertEqual(snapshot.days.first?.date, "2026-09-04")
+        XCTAssertEqual(snapshot.days.last?.date, "2026-09-11")
+        let monday = snapshot.days(on: PlanDate(year: 2026, month: 9, day: 7))
+        XCTAssertEqual(monday.today?.day, .monday)
+        XCTAssertEqual(monday.today?.meals.map(\.name), ["Upma"])
+    }
+
+    /// Next week failed to load: its days are absent, not rendered as empty.
+    func testDaysFromAnUnloadedWeekAreLeftOut() {
+        let snapshot = WidgetSnapshot.build(
+            weeks: ["2026-08-31": MealPlan(weekStartDate: "2026-08-31")],
+            on: date("2026-09-04T09:00:00+05:30"),
+            enabledTypes: [.breakfast],
+            isAuthenticated: true,
+            calendar: kolkata
+        )
+
+        XCTAssertEqual(snapshot.days.map(\.date), ["2026-09-04", "2026-09-05", "2026-09-06"])
+        XCTAssertNil(snapshot.days(on: PlanDate(year: 2026, month: 9, day: 6)).tomorrow)
+    }
+
+    /// A response missing its `weekStartDate` must not cost the widget its days.
+    func testWeeksAreKeyedByTheRequestNotTheResponse() {
+        var plan = MealPlan(weekStartDate: "")
+        plan.meals["friday"] = DayMeals(dinner: meal("Dal"))
+
+        let snapshot = WidgetSnapshot.build(
+            weeks: ["2026-08-31": plan],
+            on: date("2026-09-04T09:00:00+05:30"),
+            enabledTypes: [.dinner],
+            isAuthenticated: true,
+            calendar: kolkata
+        )
+
+        XCTAssertEqual(snapshot.days.first?.meals.map(\.name), ["Dal"])
+    }
+
+    func testADateOutsideTheWindowFindsNothing() {
+        let snapshot = WidgetSnapshot.build(
+            weeks: ["2026-08-31": MealPlan(weekStartDate: "2026-08-31")],
+            on: date("2026-09-04T09:00:00+05:30"),
+            enabledTypes: [.breakfast],
+            isAuthenticated: true,
+            calendar: kolkata
+        )
+
+        let later = snapshot.days(on: PlanDate(year: 2026, month: 9, day: 20))
+        XCTAssertNil(later.today)
+        XCTAssertNil(later.tomorrow)
+    }
 }
