@@ -59,8 +59,8 @@ public enum ShoppingScope {
     public static let categoryOrder = [
         "Vegetables",
         "Fruits",
-        "Dairy & Eggs",
-        "Meat & Seafood",
+        "Dairy",
+        "Meat, Seafood & Eggs",
         "Grains & Pulses",
         "Spices & Herbs",
         "Pantry Items",

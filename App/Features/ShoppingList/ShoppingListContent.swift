@@ -312,8 +312,8 @@ struct ShoppingListContent: View {
         switch category {
         case "Vegetables": Kkb.sage500
         case "Fruits": Kkb.marigold500
-        case "Dairy & Eggs": Kkb.terracotta400
-        case "Meat & Seafood": Kkb.terracotta500
+        case "Dairy": Kkb.terracotta400
+        case "Meat, Seafood & Eggs": Kkb.terracotta500
         case "Grains & Pulses": Kkb.marigold600
         case "Spices & Herbs": Kkb.terracotta400
         case "Pantry Items": Kkb.ink700

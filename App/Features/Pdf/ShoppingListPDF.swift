@@ -196,8 +196,8 @@ enum ShoppingListPDF {
         switch category {
         case "Vegetables": PDFColors.sage500
         case "Fruits": PDFColors.marigold500
-        case "Dairy & Eggs": PDFColors.terracotta400
-        case "Meat & Seafood": PDFColors.terracotta500
+        case "Dairy": PDFColors.terracotta400
+        case "Meat, Seafood & Eggs": PDFColors.terracotta500
         case "Grains & Pulses": PDFColors.marigold600
         case "Spices & Herbs": PDFColors.terracotta400
         case "Pantry Items": PDFColors.ink700

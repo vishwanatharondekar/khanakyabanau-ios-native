@@ -275,7 +275,7 @@ final class ShoppingScopeTests: XCTestCase {
 
     func testCategoryOrderMatchesTheServerContract() {
         XCTAssertEqual(ShoppingScope.categoryOrder, [
-            "Vegetables", "Fruits", "Dairy & Eggs", "Meat & Seafood",
+            "Vegetables", "Fruits", "Dairy", "Meat, Seafood & Eggs",
             "Grains & Pulses", "Spices & Herbs", "Pantry Items", "Other",
         ])
     }
