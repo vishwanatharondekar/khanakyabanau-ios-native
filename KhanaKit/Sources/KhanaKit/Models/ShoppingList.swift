@@ -48,6 +48,13 @@ public struct ShoppingList: Codable, Hashable, Sendable {
     /// Normalized (trimmed + lowercased) names the user has ticked off.
     public var haveAlready: [String]
     public var newItems: [String]
+    /// Swiggy Instamart orders placed against this week, newest first, at most
+    /// `InstamartOrders.maxStoredOrders`. Persisted per week on the same
+    /// server-side document as `haveAlready` and returned by get-shopping-list.
+    /// A live order's items read as "ordered" until Swiggy reports it delivered,
+    /// when they move into `haveAlready` — see `InstamartOrders`. Absent on lists
+    /// saved before ordering existed.
+    public var orders: [StoredOrder]
     /// True when the server served this from cache without an AI call.
     public var cached: Bool
     /// The server's answer to a `cachedOnly` probe when nothing is stored. Only
@@ -59,6 +66,7 @@ public struct ShoppingList: Codable, Hashable, Sendable {
         dayWise: [String: [String: MealIngredients]] = [:],
         haveAlready: [String] = [],
         newItems: [String] = [],
+        orders: [StoredOrder] = [],
         cached: Bool = false,
         absent: Bool = false
     ) {
@@ -66,6 +74,7 @@ public struct ShoppingList: Codable, Hashable, Sendable {
         self.dayWise = dayWise
         self.haveAlready = haveAlready
         self.newItems = newItems
+        self.orders = orders
         self.cached = cached
         self.absent = absent
     }
@@ -76,6 +85,9 @@ public struct ShoppingList: Codable, Hashable, Sendable {
         dayWise = (try? c.decode([String: [String: MealIngredients]].self, forKey: .dayWise)) ?? [:]
         haveAlready = (try? c.decode([String].self, forKey: .haveAlready)) ?? []
         newItems = (try? c.decode([String].self, forKey: .newItems)) ?? []
+        // Element by element: one unreadable record costs that record, not every
+        // order in the week — which would put every ordered item back on the list.
+        orders = c.decodeLossyArray(of: StoredOrder.self, forKey: .orders) ?? []
         cached = (try? c.decode(Bool.self, forKey: .cached)) ?? false
         absent = (try? c.decode(Bool.self, forKey: .absent)) ?? false
     }

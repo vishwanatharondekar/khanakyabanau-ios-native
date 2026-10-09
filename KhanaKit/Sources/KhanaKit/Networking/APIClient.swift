@@ -148,6 +148,34 @@ public actor APIClient {
         return try decode(data, as: type)
     }
 
+    /// The response as it came, whatever its status, for routes whose failures
+    /// carry more than `APIError` keeps: the groceries routes answer
+    /// `{error, reconnect? | repriced? | expired?}` on a 409 and set `Retry-After`
+    /// on a 429, and `validate` would fold the first into `.accountAlreadyExists`
+    /// and drop the header. Type a non-2xx with `InstamartFailure.from`.
+    ///
+    /// Two things still throw, exactly as from `send`:
+    /// - transport failures, as `APIError.offline` / `.timeout` / `.network`;
+    /// - a 401 on an authenticated endpoint, as `APIError.unauthorized` after the
+    ///   unauthorized handler has run. A dead app session is a dead session on
+    ///   every route; the groceries routes never use 401 for Swiggy's own grant.
+    public func sendRaw(_ endpoint: Endpoint) async throws -> RawResponse {
+        let (data, response) = try await perform(endpoint)
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.network("Malformed response")
+        }
+        if http.statusCode == 401, endpoint.requiresAuth {
+            await signalUnauthorized()
+            throw APIError.unauthorized
+        }
+        var headers: [String: String] = [:]
+        for (name, value) in http.allHeaderFields {
+            guard let name = name as? String else { continue }
+            headers[name.lowercased()] = value as? String ?? "\(value)"
+        }
+        return RawResponse(status: http.statusCode, body: data, headers: headers)
+    }
+
     // MARK: - Internals
 
     private func perform(_ endpoint: Endpoint) async throws -> (Data, URLResponse) {
@@ -238,6 +266,38 @@ public actor APIClient {
         if data.isEmpty, let empty = EmptyResponse() as? Response { return empty }
         do {
             return try decoder.decode(type, from: data)
+        } catch {
+            throw APIError.decoding(String(describing: error))
+        }
+    }
+}
+
+/// A response handed back unvalidated by `APIClient.sendRaw`.
+public struct RawResponse: Sendable {
+    public var status: Int
+    public var body: Data
+    /// Header names lowercased; read through `header(_:)`.
+    public var headers: [String: String]
+
+    public init(status: Int, body: Data, headers: [String: String] = [:]) {
+        self.status = status
+        self.body = body
+        self.headers = Dictionary(
+            headers.map { ($0.key.lowercased(), $0.value) }, uniquingKeysWith: { _, last in last }
+        )
+    }
+
+    public var isSuccess: Bool { (200...299).contains(status) }
+
+    /// Case-insensitive, as HTTP header names are.
+    public func header(_ name: String) -> String? { headers[name.lowercased()] }
+
+    /// Decodes the body as `APIClient.send(_:as:)` would, failing with
+    /// `APIError.decoding`. An empty body decodes as `EmptyResponse`.
+    public func decode<Response: Decodable>(_ type: Response.Type) throws -> Response {
+        if body.isEmpty, let empty = EmptyResponse() as? Response { return empty }
+        do {
+            return try JSONDecoder().decode(type, from: body)
         } catch {
             throw APIError.decoding(String(describing: error))
         }

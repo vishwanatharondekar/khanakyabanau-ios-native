@@ -9,11 +9,19 @@ import SwiftUI
 /// so a "Shopping list" heading inside the pane repeats both of them.
 struct ShoppingListContent: View {
     @Environment(\.app) private var env
+    @Environment(SessionStore.self) private var session
+    @Environment(\.scenePhase) private var scenePhase
 
     var list: ShoppingList
     var weekStartDate: String
+    var week: WeekViewModel
+    @Bindable var instamart: InstamartViewModel
 
     @State private var model: ShoppingListViewModel?
+    /// A TabView keeps the Plan tab's views alive while Today or Me is shown,
+    /// so a foreground there would still reach `onChange(of: scenePhase)`.
+    /// Delivery status is fetched only while this pane is on screen.
+    @State private var isVisible = false
 
     var body: some View {
         Group {
@@ -26,10 +34,74 @@ struct ShoppingListContent: View {
         // Keyed on the week so switching weeks rebuilds the model rather than
         // showing last week's ticks against this week's list.
         .task(id: weekStartDate) {
-            model = ShoppingListViewModel(
-                env: env, list: list, weekStartDate: weekStartDate
+            let week = week
+            let weekStart = weekStartDate
+            let created = ShoppingListViewModel(
+                env: env,
+                list: list,
+                weekStartDate: weekStart,
+                reloadList: { await week.cachedShoppingList(weekStartDate: weekStart) }
             )
+            // This model is rebuilt from `list` (the week's ShoppingSession)
+            // every time the pane is shown, so every tick and order has to be
+            // written back to it — without this, ticking "have", switching to
+            // Meals and back showed the list as first loaded.
+            created.onStateChange = { have, orders in
+                week.adoptShoppingState(weekStartDate: weekStart, haveAlready: have, orders: orders)
+            }
+            model = created
+            // Re-pointed at every new list model, so after a week change a
+            // placed order lands on the week it was placed for. Both callbacks
+            // buffer on the Instamart side until set, and capture the model
+            // strongly on purpose: a weak capture would let an order placed
+            // while the pane was away be delivered to nothing — and an
+            // unrecorded order's only route to the server is a list taking it.
+            instamart.onOrderPlaced = { placed in Task { await created.onOrderPlaced(placed) } }
+            instamart.onReloadShopping = { Task { await created.reloadShopping() } }
+            // Showing the pane is one of the two moments a delivery status may
+            // be fetched (the other is the app returning to it, below).
+            await created.syncOrderStatuses()
         }
+        .onAppear { isVisible = true }
+        .onDisappear { isVisible = false }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, isVisible, let model else { return }
+            Task { await model.syncOrderStatuses() }
+        }
+        .sheet(isPresented: instamartSheetBinding) {
+            InstamartSheet(model: instamart, buildingNames: model?.toBuyNames ?? [])
+                // Swipe-down while an order is being placed would look like a
+                // cancel of something that cannot be cancelled.
+                .interactiveDismissDisabled(instamart.phase.isPlacing)
+        }
+        .swiggySignIn(instamart)
+        // The sheet shows Instamart's messages while it is up; this shows them
+        // otherwise — "Reconnect Swiggy to order.", a repriced cart that closed
+        // the review. Exactly one of the two bindings is non-nil at a time.
+        .kkbToast(Binding(
+            get: { instamart.phase.showsSheet ? nil : instamart.message },
+            set: { instamart.message = $0 }
+        ))
+    }
+
+    /// Any dismissal — swipe, Cancel — goes through `dismiss()`, which cancels
+    /// a build and refuses while placing.
+    private var instamartSheetBinding: Binding<Bool> {
+        Binding(
+            get: { instamart.phase.showsSheet },
+            set: { if !$0 { instamart.dismiss() } }
+        )
+    }
+
+    /// The Instamart button: everything the cart needs, captured at the tap.
+    private func orderOnInstamart(_ model: ShoppingListViewModel) {
+        let request = OrderRequest(
+            scoped: model.scoped,
+            haveAlready: model.cartHaveAlready,
+            isVegetarian: session.user?.dietaryPreferences?.isVegetarian ?? false,
+            weekStartDate: model.weekStartDate
+        )
+        Task { await instamart.order(request) }
     }
 
     @ViewBuilder
@@ -45,6 +117,19 @@ struct ShoppingListContent: View {
                 }
 
                 Divider().overlay(Kkb.hairline)
+
+                // The whole week's live order, not just the scope's: the strip
+                // is about the delivery, which does not shrink when a day chip
+                // is unticked.
+                if let live = model.orders.first(where: { $0.orderStatus == .live }) {
+                    LiveOrderStrip(
+                        arrivingCount: model.orderedNames.count,
+                        etaAt: live.etaAt,
+                        statusLabel: live.statusLabel
+                    )
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+                }
 
                 if model.selectedDays.isEmpty {
                     emptyState(
@@ -164,6 +249,9 @@ struct ShoppingListContent: View {
         _ item: Ingredient
     ) -> some View {
         let isHad = model.isHad(item.name)
+        // On its way from Instamart. `isOrdered` already excludes a manual
+        // "have" tick, so have still wins.
+        let isOrdered = model.isOrdered(item.name)
         let meals = model.meals(for: item.name)
         let amount = ShoppingScope.formatAmount(
             IngredientAmount(amount: item.amount, unit: item.unit)
@@ -183,6 +271,14 @@ struct ShoppingListContent: View {
                             .kkbFont(.bodyLarge)
                             .foregroundStyle(isHad ? Kkb.textSecondary : Kkb.textPrimary)
                             .strikethrough(isHad, color: Kkb.textSecondary)
+                        if isOrdered {
+                            Text("ORDERED")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(Kkb.accentText)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Kkb.terracottaSurface))
+                        }
                         if model.isNew(item.name), !isHad {
                             Text("NEW")
                                 .font(.system(size: 9, weight: .bold))
@@ -215,7 +311,7 @@ struct ShoppingListContent: View {
         .accessibilityLabel(
             "\(ShoppingScope.titleCaseIngredient(item.name)), \(amount)"
         )
-        .accessibilityValue(isHad ? "Already have" : "To buy")
+        .accessibilityValue(isHad ? "Already have" : isOrdered ? "Ordered" : "To buy")
         .accessibilityAddTraits(.isButton)
     }
 
@@ -234,37 +330,52 @@ struct ShoppingListContent: View {
         }
     }
 
+    /// Counts, then the actions. When Instamart is offered it is the primary
+    /// action and Share / Copy step aside — as on the webapp and Android, a
+    /// filled cart beats a pasted list — while PDF stays as the secondary.
     private func footer(_ model: ShoppingListViewModel) -> some View {
-        VStack(spacing: 10) {
+        let showInstamart = instamart.offer != .hidden
+        return VStack(spacing: 10) {
             if let error = model.errorMessage {
                 Text(error)
                     .kkbFont(.bodySmall)
                     .foregroundStyle(Kkb.terracotta600)
             }
 
-            Text(model.toBuyCount == 0 && model.haveCount > 0
-                 ? "Everything's covered — nothing left to buy"
-                 : "\(model.toBuyCount) to buy · \(model.haveCount) have")
+            Text(countsLine(model))
                 .kkbFont(.bodyMedium)
                 .foregroundStyle(Kkb.textSecondary)
 
-            Text("Tip: Copy, then paste into Reminders — each line becomes an item.")
-                .kkbFont(.bodySmall)
-                .foregroundStyle(Kkb.textSecondary.opacity(0.85))
-                .multilineTextAlignment(.center)
+            if showInstamart {
+                PoweredBySwiggy()
+            } else {
+                // Names the Copy button, so it goes when Copy does.
+                Text("Tip: Copy, then paste into Reminders — each line becomes an item.")
+                    .kkbFont(.bodySmall)
+                    .foregroundStyle(Kkb.textSecondary.opacity(0.85))
+                    .multilineTextAlignment(.center)
+            }
 
             HStack(spacing: 10) {
-                footerAction(
-                    "Share", systemImage: "square.and.arrow.up", isEnabled: model.canExport
-                ) { model.share() }
-                footerAction(
-                    "Copy", systemImage: "doc.on.doc", isEnabled: model.canExport
-                ) { model.copyToPasteboard() }
+                if showInstamart {
+                    instamartAction(model)
+                } else {
+                    footerAction(
+                        "Share", systemImage: "square.and.arrow.up", isEnabled: model.canExport
+                    ) { model.share() }
+                    footerAction(
+                        "Copy", systemImage: "doc.on.doc", isEnabled: model.canExport
+                    ) { model.copyToPasteboard() }
+                }
+                // Beside Instamart, PDF keeps its own width and Instamart takes
+                // the rest — the same split Android and the webapp use. Both
+                // stretching let the primary's priority squeeze PDF to a sliver.
                 footerAction(
                     model.isExportingPDF ? "Generating…" : "PDF",
                     systemImage: "doc.richtext",
                     isBusy: model.isExportingPDF,
-                    isEnabled: model.canExport
+                    isEnabled: model.canExport,
+                    fills: !showInstamart
                 ) {
                     Task { await model.exportPDF() }
                 }
@@ -276,31 +387,71 @@ struct ShoppingListContent: View {
         .background(.ultraThinMaterial)
     }
 
+    /// "N to buy · M ordered · K have", ordered only when there is any. An
+    /// empty list keeps the plain counts rather than claiming it is covered.
+    private func countsLine(_ model: ShoppingListViewModel) -> String {
+        let toBuy = model.toBuyCount
+        let ordered = model.orderedCount
+        let have = model.haveCount
+        if toBuy == 0, ordered == 0, have > 0 {
+            return "Everything's covered — nothing left to buy"
+        }
+        return ["\(toBuy) to buy", ordered > 0 ? "\(ordered) ordered" : nil, "\(have) have"]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+    }
+
+    /// The webapp's phone labels, in the footer's short-tile form. The same
+    /// word whether or not Swiggy is connected: connecting is our plumbing,
+    /// not a decision the user is being asked to make.
+    private func instamartAction(_ model: ShoppingListViewModel) -> some View {
+        let (title, busy): (String, Bool) = switch instamart.phase {
+        case .building: ("Building…", true)
+        case .connecting: ("Waiting for Swiggy…", true)
+        default: ("Instamart", false)
+        }
+        return footerAction(
+            title,
+            systemImage: "cart",
+            isBusy: busy,
+            isEnabled: model.canExport && instamart.phase == .idle,
+            isPrimary: true
+        ) {
+            orderOnInstamart(model)
+        }
+    }
+
     private func footerAction(
         _ title: String,
         systemImage: String,
         isBusy: Bool = false,
         isEnabled: Bool = true,
+        isPrimary: Bool = false,
+        /// Stretch to share the row, or keep the label's own width.
+        fills: Bool = true,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        let tint = isPrimary ? Kkb.cream50 : Kkb.accentText
+        return Button(action: action) {
             VStack(spacing: 4) {
                 if isBusy {
-                    ProgressView().controlSize(.small).tint(Kkb.accentText)
+                    ProgressView().controlSize(.small).tint(tint)
                 } else {
                     Image(systemName: systemImage).font(.system(size: 16, weight: .semibold))
                 }
-                Text(title).kkbFont(.labelSmall)
+                Text(title).kkbFont(.labelSmall).lineLimit(1)
             }
-            .foregroundStyle(Kkb.accentText)
-            .frame(maxWidth: .infinity)
+            .foregroundStyle(tint)
+            .frame(maxWidth: fills ? .infinity : nil)
+            .padding(.horizontal, fills ? 0 : 22)
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Kkb.terracottaSurface.opacity(0.7))
+                    .fill(isPrimary ? AnyShapeStyle(Kkb.terracotta500) : AnyShapeStyle(Kkb.terracottaSurface.opacity(0.7)))
             )
         }
         .buttonStyle(.plain)
+        .fixedSize(horizontal: !fills, vertical: false)
         .disabled(isBusy || !isEnabled)
         .opacity(isEnabled ? 1 : 0.45)
     }
@@ -318,6 +469,60 @@ struct ShoppingListContent: View {
         case "Spices & Herbs": Kkb.terracotta400
         case "Pantry Items": Kkb.ink700
         default: Kkb.ink600
+        }
+    }
+}
+
+/// "N items arriving from Instamart" while an order is live, with Swiggy's
+/// countdown or status words. N is every name on its way this week, not just
+/// the scope's — as on the webapp and Android.
+///
+/// `now` ticks every thirty seconds, and only while there is a countdown to
+/// move: the strip reads in whole minutes, so a faster tick would redraw for
+/// nothing anyone can see, and an order with no estimate has no timer at all.
+/// The loop is the view's `.task`, so it stops when the pane goes away.
+private struct LiveOrderStrip: View {
+    var arrivingCount: Int
+    var etaAt: String?
+    var statusLabel: String
+
+    @State private var now = Date()
+
+    private var countdown: String? {
+        InstamartOrders.formatCountdown(etaAt: etaAt, nowMillis: InstamartOrders.millis(now))
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(arrivingCount) item\(arrivingCount == 1 ? "" : "s") arriving from Instamart")
+                    .kkbFont(.bodyMedium)
+                    .fontWeight(.medium)
+                    .foregroundStyle(Kkb.textPrimary)
+                PoweredBySwiggy()
+            }
+            Spacer(minLength: 0)
+            Text(countdown ?? (statusLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                               ? "Order placed" : statusLabel))
+                .kkbFont(.bodySmall)
+                .foregroundStyle(Kkb.textSecondary)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Kkb.terracottaSurface))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Kkb.terracotta200.opacity(0.8), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .task(id: etaAt) {
+            now = Date()
+            while countdown != nil {
+                try? await Task.sleep(for: .seconds(30))
+                guard !Task.isCancelled else { return }
+                now = Date()
+            }
         }
     }
 }

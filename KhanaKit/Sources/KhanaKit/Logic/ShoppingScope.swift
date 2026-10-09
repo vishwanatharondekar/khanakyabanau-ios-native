@@ -287,16 +287,19 @@ public enum ShoppingScope {
     }
 
     /// Grouped, human-readable list for the system share sheet (WhatsApp etc.).
-    /// Pruned items and emptied categories are omitted.
+    /// Pruned items, items `ordered` from Instamart (normalized names), and
+    /// emptied categories are omitted.
     public static func buildShareText(
         scoped: ScopedShoppingList,
         haveAlready: Set<String>,
-        scopeLabel: String
+        scopeLabel: String,
+        ordered: Set<String> = []
     ) -> String {
         var lines = ["Shopping list" + (scopeLabel.isEmpty ? "" : " · \(scopeLabel)")]
         for section in scoped.categorized {
             let needed = section.items.filter {
-                !haveAlready.contains(normalizeIngredientName($0.name))
+                let key = normalizeIngredientName($0.name)
+                return !haveAlready.contains(key) && !ordered.contains(key)
             }
             guard !needed.isEmpty else { continue }
             lines.append("")
@@ -308,6 +311,15 @@ public enum ShoppingScope {
                 )
             }
         }
+
+        // One line rather than a section: whoever receives a shared list does
+        // not need the manifest, only to know the list is short for a reason.
+        // Counts every ordered name, scoped or not — same as the webapp.
+        if !ordered.isEmpty {
+            lines.append("")
+            lines.append("\(ordered.count) item\(ordered.count == 1 ? "" : "s") ordered from Instamart")
+        }
+
         return lines.joined(separator: "\n")
     }
 
@@ -315,12 +327,17 @@ public enum ShoppingScope {
     /// Keep) creates one entry per line, so no headers or bullets.
     public static func buildCopyText(
         scoped: ScopedShoppingList,
-        haveAlready: Set<String>
+        haveAlready: Set<String>,
+        ordered: Set<String> = []
     ) -> String {
         var lines: [String] = []
         for section in scoped.categorized {
             for item in section.items {
-                guard !haveAlready.contains(normalizeIngredientName(item.name)) else { continue }
+                let key = normalizeIngredientName(item.name)
+                // No "ordered" note here, unlike buildShareText: this text is
+                // pasted into Reminders, where every line becomes a task. A note
+                // would become a task.
+                guard !haveAlready.contains(key), !ordered.contains(key) else { continue }
                 let amount = formatAmount(IngredientAmount(amount: item.amount, unit: item.unit))
                 lines.append(titleCaseIngredient(item.name) + (amount.isEmpty ? "" : " \(amount)"))
             }

@@ -16,12 +16,17 @@ final class BrandTests: XCTestCase {
         return b
     }
 
-    private func user(isGuest: Bool = false, pdfImport: Bool = false) -> User {
+    private func user(
+        id: String = "user_1",
+        isGuest: Bool = false,
+        pdfImport: Bool = false,
+        swiggyInstamart: Bool = false
+    ) -> User {
         User(
-            id: "user_1",
+            id: id,
             name: "Test",
             isGuest: isGuest,
-            features: UserFeatures(pdfImport: pdfImport)
+            features: UserFeatures(pdfImport: pdfImport, swiggyInstamart: swiggyInstamart)
         )
     }
 
@@ -107,6 +112,59 @@ final class BrandTests: XCTestCase {
         let json = Data(#"{"id":"u","name":"T","features":{"pdfImport":true}}"#.utf8)
         let decoded = try JSONDecoder().decode(User.self, from: json)
         XCTAssertTrue(decoded.features.pdfImport)
+    }
+
+    func testDecodingAProfileReadsTheInstamartFlag() throws {
+        let json = Data(#"{"id":"u","name":"T","features":{"swiggyInstamart":true}}"#.utf8)
+        let decoded = try JSONDecoder().decode(User.self, from: json)
+        XCTAssertTrue(decoded.features.swiggyInstamart)
+        XCTAssertFalse(decoded.features.pdfImport)
+        XCTAssertFalse(User(id: "u", name: "T").features.swiggyInstamart)
+    }
+
+    // MARK: - canOrderInstamart: brand, then user, then country — all must agree
+
+    private func shopper() -> User { user(swiggyInstamart: true) }
+
+    func testInstamartIsOnForAFlaggedRegisteredShopperInIndia() {
+        XCTAssertTrue(brand.capabilities.instamart)
+        XCTAssertTrue(canOrderInstamart(brand: brand, user: shopper(), country: "IN"))
+    }
+
+    func testInstamartCountryCheckIgnoresCaseAndWhitespace() {
+        XCTAssertTrue(canOrderInstamart(brand: brand, user: shopper(), country: "in"))
+        XCTAssertTrue(canOrderInstamart(brand: brand, user: shopper(), country: " IN "))
+    }
+
+    /// Instamart serves India only, and the moment before the first geo answer
+    /// arrives as nil: both must hide the button rather than guess.
+    func testInstamartFailsClosedOutsideIndiaOrWithoutACountry() {
+        XCTAssertFalse(canOrderInstamart(brand: brand, user: shopper(), country: "US"))
+        XCTAssertFalse(canOrderInstamart(brand: brand, user: shopper(), country: nil))
+        XCTAssertFalse(canOrderInstamart(brand: brand, user: shopper(), country: ""))
+        XCTAssertFalse(canOrderInstamart(brand: brand, user: shopper(), country: "  "))
+    }
+
+    func testInstamartNeedsTheUserFlagSwitchedOn() {
+        XCTAssertFalse(canOrderInstamart(brand: brand, user: user(swiggyInstamart: false), country: "IN"))
+    }
+
+    /// Every order is an uncancellable COD order on a real Swiggy account.
+    func testGuestsNeverOrderFromInstamartWhateverTheirFlagSays() {
+        XCTAssertFalse(canOrderInstamart(
+            brand: brand, user: user(isGuest: true, swiggyInstamart: true), country: "IN"
+        ))
+    }
+
+    func testNoUserOrABlankIdMeansNoInstamart() {
+        XCTAssertFalse(canOrderInstamart(brand: brand, user: nil, country: "IN"))
+        XCTAssertFalse(canOrderInstamart(brand: brand, user: user(id: " ", swiggyInstamart: true), country: "IN"))
+    }
+
+    func testABrandWithoutInstamartRefusesEvenAFlaggedIndianShopper() {
+        var noInstamart = brand
+        noInstamart.capabilities.instamart = false
+        XCTAssertFalse(canOrderInstamart(brand: noInstamart, user: shopper(), country: "IN"))
     }
 
     // MARK: - The generate label

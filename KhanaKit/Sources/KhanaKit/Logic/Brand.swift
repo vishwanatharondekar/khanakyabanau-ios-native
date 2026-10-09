@@ -34,17 +34,23 @@ public struct BrandCapabilities: Hashable, Sendable {
     /// whose plan is authored elsewhere: no cell editing, no replace sheet, no
     /// Clear, no import.
     public var canEditPlan: Bool
+    /// Whether ordering the shopping list from Swiggy Instamart exists in this
+    /// product. Only the product half: who actually sees it is the server's
+    /// per-user flag and an India-only country check — see `canOrderInstamart`.
+    public var instamart: Bool
 
     public init(
         aiGeneration: Bool,
         pdfImport: Bool,
         readyMadePlans: Bool,
-        canEditPlan: Bool
+        canEditPlan: Bool,
+        instamart: Bool = false
     ) {
         self.aiGeneration = aiGeneration
         self.pdfImport = pdfImport
         self.readyMadePlans = readyMadePlans
         self.canEditPlan = canEditPlan
+        self.instamart = instamart
     }
 }
 
@@ -101,7 +107,10 @@ public struct Brand: Hashable, Sendable {
             // on when it is — no screen knows this flag exists.
             pdfImport: false,
             readyMadePlans: true,
-            canEditPlan: true
+            canEditPlan: true,
+            // Still per-user on the server (users/{id}.features.swiggyInstamart)
+            // and India-only, so this alone offers it to no one.
+            instamart: true
         ),
         labels: BrandLabels(
             fillWeek: "Fill empty days",
@@ -136,6 +145,31 @@ public func canGenerate(_ brand: Brand, for user: User?) -> Bool {
     guard brand.capabilities.aiGeneration else { return false }
     guard let user, !user.id.isEmpty else { return false }
     return true
+}
+
+/// Whether to offer Swiggy Instamart ordering from the shopping list.
+///
+/// Brand, then user, then country — all must agree. This is the UI half only:
+/// the real gate is the server's `GET api/groceries/status` answering 200
+/// (deployment switch + the same per-user flag), and the button waits for it.
+///
+/// Guests are refused whatever their flag says: every order is an uncancellable
+/// cash-on-delivery order on a real Swiggy account, and a guest session is one
+/// deleted app away from being unrecoverable.
+///
+/// `country` is `GET api/geo`'s answer. It fails closed — an unknown country, a
+/// failed lookup and the moment before the first answer all arrive as nil and
+/// all hide the button — because Instamart serves India only, and a shopper
+/// wrongly shown it would connect a service that cannot deliver to them.
+/// Mirrors the webapp's `isIndiaShopper` (`lib/swiggy/eligibility.ts`), minus
+/// its devtools override, which has no app equivalent.
+public func canOrderInstamart(brand: Brand, user: User?, country: String?) -> Bool {
+    guard brand.capabilities.instamart else { return false }
+    guard let user, !user.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        return false
+    }
+    guard !user.isGuest, user.features.swiggyInstamart else { return false }
+    return (country ?? "").trimmingCharacters(in: .whitespacesAndNewlines).uppercased() == "IN"
 }
 
 public func canEditPlan(_ brand: Brand) -> Bool {

@@ -580,6 +580,29 @@ final class WeekViewModel {
         shoppingState = .ready
     }
 
+    /// The list model's write-back (`ShoppingListViewModel.onStateChange`).
+    ///
+    /// The pane's model is rebuilt from `shoppingSession.list` every time the
+    /// pane is shown, so the list must carry the latest ticks and orders or a
+    /// trip to Meals and back would show the list as first loaded — a placed
+    /// order gone, delivered items unticked. Ignored for a week no longer shown.
+    func adoptShoppingState(weekStartDate week: String, haveAlready: Set<String>, orders: [StoredOrder]) {
+        guard shoppingSession?.weekStartDate == week else { return }
+        shoppingSession?.list.haveAlready = haveAlready.sorted()
+        shoppingSession?.list.orders = orders
+    }
+
+    /// The week's stored list, re-read for free (`cachedOnly`: no AI call, no
+    /// guest allowance) — `ShoppingListViewModel`'s `reloadList`, after a
+    /// checkout whose outcome is unknown. Nil for a week no longer shown, an
+    /// absent list, or a failed read.
+    func cachedShoppingList(weekStartDate week: String) async -> ShoppingList? {
+        guard plan.weekStartDate == week else { return nil }
+        guard let list = try? await env.ai.shoppingList(for: plan, cachedOnly: true),
+              !list.absent, plan.weekStartDate == week else { return nil }
+        return list
+    }
+
     // MARK: - Suggestions
 
     /// The user's cuisine preferences, mirrored from the profile that `SessionStore`

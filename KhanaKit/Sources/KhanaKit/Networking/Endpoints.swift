@@ -170,6 +170,94 @@ public enum Endpoints {
                  body: Endpoint.json(body))
     }
 
+    /// The orders-capable form of the same PATCH: `haveAlready`, `orders`, or
+    /// both in one write (a status sync that moved delivered items into
+    /// haveAlready sends both). Absent fields are left off the wire — the server
+    /// treats a present field as an update and 400s on neither.
+    public static func updateShoppingList(
+        _ weekStartDate: String,
+        _ body: UpdateShoppingListRequest
+    ) -> Endpoint {
+        Endpoint(method: .patch, path: "api/shopping-list/\(weekStartDate)",
+                 body: Endpoint.json(body))
+    }
+
+    // MARK: - Groceries (Swiggy Instamart)
+    //
+    // Everything Swiggy is server-side: the app never holds a Swiggy token,
+    // computes a price, or picks a SKU. Every route 404s when the feature is off
+    // for the deployment or the user, and answers an expired Swiggy grant with
+    // 409 `reconnect` — never 401, which `APIClient` reads as a dead app session.
+    // Call these through `APIClient.sendRaw` and type failures with
+    // `InstamartFailure.from`: `send` folds every 409 into
+    // `.accountAlreadyExists` and drops the body and `Retry-After` the mapping needs.
+    // Nothing here is ever retried automatically.
+
+    /// 200 → the feature is on for this user, `GroceriesStatusResponse.connected`
+    /// says whether a live token is held; 404 → off. See `InstamartAvailability`.
+    public static var groceriesStatus: Endpoint {
+        Endpoint(method: .get, path: "api/groceries/status")
+    }
+
+    /// A Swiggy consent URL. `client` changes only how the server's callback
+    /// answers once consent is done — for "ios", a 302 to
+    /// `khanakyabanau://swiggy/connected?status=…`, which the
+    /// `ASWebAuthenticationSession` catches itself — not the consent or the
+    /// redirect URI.
+    public static func groceriesConnect(client: String = "ios") -> Endpoint {
+        Endpoint(method: .get, path: "api/groceries/connect",
+                 query: [URLQueryItem(name: "client", value: client)])
+    }
+
+    /// Revokes and forgets the Swiggy token. Not behind the per-user flag
+    /// server-side, so someone whose access was withdrawn can still disconnect.
+    /// Answers `{connected:false}`.
+    public static var groceriesDisconnect: Endpoint {
+        Endpoint(method: .delete, path: "api/groceries/connect")
+    }
+
+    /// Match the scoped list to SKUs and write Swiggy's cart. Places nothing.
+    /// The AI budget: the server fans out one search per ingredient and runs a
+    /// model over the candidates. The body is `BuildCartRequest.jsonData`, which
+    /// keeps the category order `JSONEncoder` would lose.
+    public static func buildCart(_ body: BuildCartRequest) -> Endpoint {
+        Endpoint(method: .post, path: "api/groceries/cart", body: body.jsonData, profile: .ai)
+    }
+
+    /// Re-price a subset of lines already matched — no search, no model call,
+    /// but several sequential Swiggy writes, so the AI budget too.
+    public static func rebuildCart(_ body: RebuildCartRequest) -> Endpoint {
+        Endpoint(method: .post, path: "api/groceries/cart/rebuild",
+                 body: Endpoint.json(body), profile: .ai)
+    }
+
+    /// The irreversible one: places a cash-on-delivery order. A non-2xx means no
+    /// order was placed; a 2xx always means one was. On the AI budget because the
+    /// client must outlast the server: a client-side timeout on an order the
+    /// server then places is the one failure that cannot be told apart from
+    /// success, and it is the one the user pays for.
+    public static func checkout(_ body: CheckoutRequest) -> Endpoint {
+        Endpoint(method: .post, path: "api/groceries/checkout",
+                 body: Endpoint.json(body), profile: .ai)
+    }
+
+    /// Swiggy's delivery status, relayed raw. Its shape has differed from
+    /// Swiggy's own docs before, so decode it as `JSONValue` and read it with
+    /// `InstamartOrders.readOrderStatus` rather than into a struct.
+    ///
+    /// The id goes in unencoded: `APIClient` builds the URL with
+    /// `appendingPathComponent`, which percent-encodes it, and would double-encode
+    /// anything encoded here. (Swiggy order ids are digits.)
+    public static func orderStatus(_ orderId: String) -> Endpoint {
+        Endpoint(method: .get, path: "api/groceries/order/\(orderId)")
+    }
+
+    /// The caller's country (`{country: "IN" | … | null}`). Unauthenticated, and
+    /// `no-store` server-side: it is a per-visitor value.
+    public static var geo: Endpoint {
+        Endpoint(method: .get, path: "api/geo", requiresAuth: false)
+    }
+
     // MARK: - Video
 
     /// A 404 here means "no saved videos yet", not an error.

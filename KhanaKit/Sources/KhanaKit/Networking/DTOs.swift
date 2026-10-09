@@ -242,18 +242,23 @@ public struct UpdateHaveAlreadyRequest: Encodable, Sendable {
     public init(haveAlready: [String]) { self.haveAlready = haveAlready }
 }
 
+/// Answers both `Endpoints.updateHaveAlready` and `Endpoints.updateShoppingList`.
 public struct UpdateHaveAlreadyResponse: Decodable, Sendable {
     public var success: Bool
+    /// The normalized, deduped list as the server stored it; empty when not sent.
     public var haveAlready: [String]
+    /// The sanitized orders as stored; nil when the request carried none.
+    public var orders: [StoredOrder]?
 
     private enum CodingKeys: String, CodingKey {
-        case success, haveAlready
+        case success, haveAlready, orders
     }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         success = (try? c.decode(Bool.self, forKey: .success)) ?? false
         haveAlready = (try? c.decode([String].self, forKey: .haveAlready)) ?? []
+        orders = c.decodeLossyArray(of: StoredOrder.self, forKey: .orders)
     }
 }
 

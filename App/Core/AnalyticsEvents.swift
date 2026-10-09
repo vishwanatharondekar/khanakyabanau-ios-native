@@ -74,6 +74,12 @@ enum AnalyticsEvents {
         static let listCopy = "shopping_list_copy"
         static let scopeChange = "shopping_list_scope_change"
         static let pruneToggle = "shopping_list_prune_toggle"
+        /// Swiggy answered a cart build with something to review. Carries
+        /// `matched_count` / `missed_count`. Android's `SWIGGY_CART_BUILT`.
+        static let swiggyCartBuilt = "swiggy_cart_built"
+        /// A checkout came back 2xx — an order exists. Carries the confirmed
+        /// `total`. Android's `SWIGGY_ORDER_PLACED`.
+        static let swiggyOrderPlaced = "swiggy_order_placed"
     }
 
     enum Share {
@@ -124,6 +130,11 @@ enum AnalyticsProperties {
     /// Which affordance opened something, when more than one leads to the same
     /// place. `video_open_modal` carries "meal_card" or "video_button".
     static let trigger = "trigger"
+    /// Instamart cart lines Swiggy matched, and names it could not.
+    static let matchedCount = "matched_count"
+    static let missedCount = "missed_count"
+    /// The To-pay figure the user confirmed at checkout, in rupees.
+    static let total = "total"
 }
 
 struct AnalyticsEvent {

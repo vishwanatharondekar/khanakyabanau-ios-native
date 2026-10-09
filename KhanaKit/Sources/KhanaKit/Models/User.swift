@@ -5,14 +5,20 @@ import Foundation
 /// missing answer must never read as a granted capability.
 public struct UserFeatures: Codable, Hashable, Sendable {
     public var pdfImport: Bool
+    /// Swiggy Instamart ordering. Set by hand on the server, like `pdfImport`
+    /// (`users/{id}.features.swiggyInstamart`), beneath the deployment-wide
+    /// kill switch. Only the UI half — see `canOrderInstamart`.
+    public var swiggyInstamart: Bool
 
-    public init(pdfImport: Bool = false) {
+    public init(pdfImport: Bool = false, swiggyInstamart: Bool = false) {
         self.pdfImport = pdfImport
+        self.swiggyInstamart = swiggyInstamart
     }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         pdfImport = (try? c.decode(Bool.self, forKey: .pdfImport)) ?? false
+        swiggyInstamart = (try? c.decode(Bool.self, forKey: .swiggyInstamart)) ?? false
     }
 }
 

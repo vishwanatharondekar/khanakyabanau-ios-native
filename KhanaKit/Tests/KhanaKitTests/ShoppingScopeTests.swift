@@ -273,6 +273,69 @@ final class ShoppingScopeTests: XCTestCase {
         )
     }
 
+    // MARK: - Ordered items (Instamart)
+
+    /// Ordered items leave the list, and one line says how many are coming.
+    /// Counts every ordered name, scoped or not — same as the webapp.
+    func testShareTextLeavesOutOrderedItemsAndSaysHowManyAreComing() {
+        let scoped = ShoppingScope.aggregateScopedList(
+            dayWise: dayWise, selectedDays: [.monday], categorized: categorized
+        )
+        let text = ShoppingScope.buildShareText(
+            scoped: scoped, haveAlready: [], scopeLabel: "", ordered: ["onion", "tomato"]
+        )
+        XCTAssertEqual(
+            text,
+            """
+            Shopping list
+
+            Grains & Pulses
+            - Rajma — 200 g
+
+            2 items ordered from Instamart
+            """
+        )
+    }
+
+    func testShareTextSaysItemInTheSingularForOneOrderedItem() {
+        let scoped = ShoppingScope.aggregateScopedList(
+            dayWise: dayWise, selectedDays: [.monday], categorized: categorized
+        )
+        let text = ShoppingScope.buildShareText(
+            scoped: scoped, haveAlready: ["rajma"], scopeLabel: "Aug 3", ordered: ["onion"]
+        )
+        XCTAssertEqual(
+            text,
+            """
+            Shopping list · Aug 3
+
+            1 item ordered from Instamart
+            """
+        )
+    }
+
+    func testShareTextWithoutOrdersIsUnchanged() {
+        let scoped = ShoppingScope.aggregateScopedList(
+            dayWise: dayWise, selectedDays: [.monday], categorized: categorized
+        )
+        XCTAssertEqual(
+            ShoppingScope.buildShareText(scoped: scoped, haveAlready: [], scopeLabel: "Aug 3", ordered: []),
+            ShoppingScope.buildShareText(scoped: scoped, haveAlready: [], scopeLabel: "Aug 3")
+        )
+    }
+
+    /// Copy text is pasted into Reminders, where every line becomes a task — so
+    /// no "ordered" note, unlike share.
+    func testCopyTextLeavesOutOrderedItemsWithoutANote() {
+        let scoped = ShoppingScope.aggregateScopedList(
+            dayWise: dayWise, selectedDays: [.monday], categorized: categorized
+        )
+        XCTAssertEqual(
+            ShoppingScope.buildCopyText(scoped: scoped, haveAlready: [], ordered: ["onion", "tomato"]),
+            "Rajma 200 g"
+        )
+    }
+
     func testCategoryOrderMatchesTheServerContract() {
         XCTAssertEqual(ShoppingScope.categoryOrder, [
             "Vegetables", "Fruits", "Dairy", "Meat, Seafood & Eggs",

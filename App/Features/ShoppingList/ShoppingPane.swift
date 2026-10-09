@@ -10,6 +10,12 @@ import SwiftUI
 struct ShoppingPane: View {
     var state: ShoppingPaneState
     var session: ShoppingSession?
+    /// The week the list belongs to: the list model writes its ticks and orders
+    /// back to it, and re-reads the cached list through it.
+    var week: WeekViewModel
+    /// Owned above the panes (`HomeView`) so a cart build or checkout in flight
+    /// survives a trip to Meals and back.
+    var instamart: InstamartViewModel
     var onRetry: () -> Void
     var onCreateAccount: () -> Void
     var onPlanWeek: () -> Void
@@ -24,7 +30,12 @@ struct ShoppingPane: View {
             busy("Building your shopping list")
         case .ready:
             if let session {
-                ShoppingListContent(list: session.list, weekStartDate: session.weekStartDate)
+                ShoppingListContent(
+                    list: session.list,
+                    weekStartDate: session.weekStartDate,
+                    week: week,
+                    instamart: instamart
+                )
             } else {
                 busy("Building your shopping list")
             }

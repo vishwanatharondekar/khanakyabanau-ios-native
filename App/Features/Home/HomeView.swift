@@ -34,6 +34,12 @@ struct HomeView: View {
     // inside `WeekView`/`TodayView` they would be torn down on every tab switch.
     @State private var weekModel: WeekViewModel?
     @State private var todayModel: TodayViewModel?
+    /// Instamart ordering, one per signed-in shell. Here rather than on the
+    /// Shopping pane because the pane (and its list model) is torn down on
+    /// every switch to Meals, and a cart build or checkout in flight must
+    /// survive that; here rather than on `WeekViewModel` because it is about
+    /// the user's Swiggy connection, not about any one week.
+    @State private var instamartModel: InstamartViewModel?
 
     var body: some View {
         TabView(selection: tabBinding) {
@@ -79,6 +85,7 @@ struct HomeView: View {
                 weekModel = created
             }
             if todayModel == nil { todayModel = TodayViewModel(env: env) }
+            if instamartModel == nil { instamartModel = InstamartViewModel(env: env) }
             // A notification tapped before this view existed sets the destination
             // during launch, so `onChange` never sees a transition. Consume any
             // value already waiting.
@@ -98,6 +105,13 @@ struct HomeView: View {
         }
         .onChange(of: env.push.pendingDestination) { _, _ in
             consumePendingDestination()
+        }
+        // A different account, or the same one after a profile refresh flipped
+        // its Instamart flag or guest status. Unforced: refresh re-runs only
+        // when one of those actually changed, and drops the last user's flow.
+        .onChange(of: session.user) { _, user in
+            guard let instamartModel else { return }
+            Task { await instamartModel.refresh(user: user) }
         }
     }
 
@@ -191,9 +205,10 @@ struct HomeView: View {
     @ViewBuilder
     private var planTab: some View {
         Group {
-            if let weekModel {
+            if let weekModel, let instamartModel {
                 PlanView(
                     model: weekModel,
+                    instamart: instamartModel,
                     onOpenVideo: { videoContext = $0 },
                     onRequestAccount: { showingGuestUpgrade = true }
                 )

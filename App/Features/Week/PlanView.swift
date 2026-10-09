@@ -15,6 +15,9 @@ struct PlanView: View {
     /// Owned by `HomeView` so it survives tab switches, matching Android's
     /// Activity-scoped view models.
     let model: WeekViewModel
+    /// Owned by `HomeView` beside the week, for the same reason: a cart build
+    /// or checkout in flight must outlive a trip to Meals and back.
+    let instamart: InstamartViewModel
     var onOpenVideo: (RecipeVideoContext) -> Void
     var onRequestAccount: () -> Void
 
@@ -141,6 +144,8 @@ struct PlanView: View {
                 ShoppingPane(
                     state: model.shoppingState,
                     session: model.shoppingSession,
+                    week: model,
+                    instamart: instamart,
                     onRetry: { Task { await model.retryShopping() } },
                     onCreateAccount: onRequestAccount,
                     onPlanWeek: { model.selectPane(.meals) }
@@ -149,6 +154,13 @@ struct PlanView: View {
                 // this cannot charge a guest for walking past.
                 .task(id: model.weekStartDate) {
                     await model.openShopping(isGuestAtLimit: isGuestAtLimit)
+                }
+                // Forced on every showing, not just once: it is how a
+                // server-side switch, or Swiggy connected on the web, reaches
+                // a session already running. Its own task so the list's probe
+                // does not wait on the edge's country lookup.
+                .task {
+                    await instamart.refresh(user: session.user, force: true)
                 }
             }
         }
