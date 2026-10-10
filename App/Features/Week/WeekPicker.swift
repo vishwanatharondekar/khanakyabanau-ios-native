@@ -19,6 +19,11 @@ struct WeekPicker: View {
     var offRails: Bool
     var onSelect: (String) -> Void
 
+    /// The pill's ground. It was the fixed `cream50`, which stayed pale in dark
+    /// mode while the label flipped to cream — cream on cream, so the week name
+    /// vanished. `surface` is the same cream50 in light mode, so only dark moves.
+    static let fill = Kkb.surface
+
     @State private var isPickerOpen = false
 
     private var label: String {
@@ -44,7 +49,7 @@ struct WeekPicker: View {
             .padding(.vertical, 7)
             .background(
                 Capsule()
-                    .fill(Kkb.cream50)
+                    .fill(Self.fill)
                     .overlay(Capsule().stroke(Kkb.hairline, lineWidth: 1))
             )
             .contentShape(Capsule())
