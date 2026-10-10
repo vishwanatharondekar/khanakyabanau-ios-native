@@ -53,14 +53,10 @@ final class InstamartViewModelTests: XCTestCase {
 
     // MARK: - Availability
 
-    func testHiddenWithoutFlagAsGuestOrSignedOutAndAsksNothingItNeedNot() async {
+    func testHiddenWithoutFlagOrSignedOutAndAsksNothingItNeedNot() async {
         let model = subject()
 
         await model.refresh(user: User(id: "u1", name: "Asha"))
-        XCTAssertEqual(model.offer, .hidden)
-        await model.refresh(user: User(
-            id: "u1", name: "Asha", isGuest: true, features: UserFeatures(swiggyInstamart: true)
-        ))
         XCTAssertEqual(model.offer, .hidden)
         await model.refresh(user: nil)
         XCTAssertEqual(model.offer, .hidden)

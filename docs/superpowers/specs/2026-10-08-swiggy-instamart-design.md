@@ -40,10 +40,11 @@ existing bearer token; it never sees a Swiggy token, a price we computed, or a S
 ## Who sees it
 
 `canOrderInstamart(brand, user, country)` in KhanaKit `Logic/Brand.swift` — all of: brand
-capability `instamart`; signed-in, non-guest user; `user.features.swiggyInstamart`;
+capability `instamart`; a user (guests included); `user.features.swiggyInstamart`
+(computed by `api/auth/profile`: on for everyone while the deployment switch is);
 `country == "IN"` (case-insensitive) from `GET api/geo` (null fails closed). The button
 then appears only once `GET api/groceries/status` returns 200; a 404 means the server's
-gate (deployment switch + per-user flag) says no.
+gate (deployment switch) says no.
 
 ## Connecting — the platform difference
 

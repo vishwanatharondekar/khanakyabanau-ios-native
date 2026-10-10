@@ -107,7 +107,7 @@ struct HomeView: View {
             consumePendingDestination()
         }
         // A different account, or the same one after a profile refresh flipped
-        // its Instamart flag or guest status. Unforced: refresh re-runs only
+        // its Instamart flag. Unforced: refresh re-runs only
         // when one of those actually changed, and drops the last user's flow.
         .onChange(of: session.user) { _, user in
             guard let instamartModel else { return }

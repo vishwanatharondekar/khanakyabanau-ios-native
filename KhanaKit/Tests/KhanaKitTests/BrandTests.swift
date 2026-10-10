@@ -149,9 +149,8 @@ final class BrandTests: XCTestCase {
         XCTAssertFalse(canOrderInstamart(brand: brand, user: user(swiggyInstamart: false), country: "IN"))
     }
 
-    /// Every order is an uncancellable COD order on a real Swiggy account.
-    func testGuestsNeverOrderFromInstamartWhateverTheirFlagSays() {
-        XCTAssertFalse(canOrderInstamart(
+    func testGuestsOrderFromInstamartLikeAnyoneElse() {
+        XCTAssertTrue(canOrderInstamart(
             brand: brand, user: user(isGuest: true, swiggyInstamart: true), country: "IN"
         ))
     }

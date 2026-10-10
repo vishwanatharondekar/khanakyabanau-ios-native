@@ -3,7 +3,7 @@ import KhanaKit
 
 /// Whether the Instamart button exists at all, and which tap it means.
 enum InstamartOffer: Hashable {
-    /// Not offered: wrong brand, guest, unflagged, outside India, the server's
+    /// Not offered: wrong brand, unflagged, outside India, the server's
     /// 404, or any failure finding out. Every unknown lands here — showing a
     /// button that cannot work is worse than not showing it.
     case hidden
@@ -134,7 +134,6 @@ final class InstamartViewModel {
 
     private struct AvailabilityKey: Equatable {
         var id: String?
-        var guest: Bool
         var flag: Bool
     }
 
@@ -158,14 +157,12 @@ final class InstamartViewModel {
     // MARK: - Availability
 
     /// Decide whether to offer Instamart to `user`. Cheap gates first: nothing
-    /// goes to the network for a user the brand, guest or flag check already
+    /// goes to the network for a user the brand or flag check already
     /// refuses. Re-runs only when the user or their flag changes, or on
     /// `force` (the Shopping pane opening, to pick up a server-side switch or
     /// a connection made on the web).
     func refresh(user: User?, force: Bool = false) async {
-        let key = AvailabilityKey(
-            id: user?.id, guest: user?.isGuest ?? false, flag: user?.features.swiggyInstamart ?? false
-        )
+        let key = AvailabilityKey(id: user?.id, flag: user?.features.swiggyInstamart ?? false)
         if !force, key == availabilityKey { return }
         let userChanged = availabilityKey?.id != key.id
         availabilityKey = key

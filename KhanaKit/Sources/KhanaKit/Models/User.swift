@@ -5,9 +5,9 @@ import Foundation
 /// missing answer must never read as a granted capability.
 public struct UserFeatures: Codable, Hashable, Sendable {
     public var pdfImport: Bool
-    /// Swiggy Instamart ordering. Set by hand on the server, like `pdfImport`
-    /// (`users/{id}.features.swiggyInstamart`), beneath the deployment-wide
-    /// kill switch. Only the UI half — see `canOrderInstamart`.
+    /// Swiggy Instamart ordering. Computed by the server's `api/auth/profile`
+    /// rather than stored: on for every user, guests included, while the
+    /// deployment-wide kill switch is on. Only the UI half — see `canOrderInstamart`.
     public var swiggyInstamart: Bool
 
     public init(pdfImport: Bool = false, swiggyInstamart: Bool = false) {

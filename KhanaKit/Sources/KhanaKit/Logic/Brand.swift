@@ -151,11 +151,11 @@ public func canGenerate(_ brand: Brand, for user: User?) -> Bool {
 ///
 /// Brand, then user, then country — all must agree. This is the UI half only:
 /// the real gate is the server's `GET api/groceries/status` answering 200
-/// (deployment switch + the same per-user flag), and the button waits for it.
+/// (deployment switch), and the button waits for it.
 ///
-/// Guests are refused whatever their flag says: every order is an uncancellable
-/// cash-on-delivery order on a real Swiggy account, and a guest session is one
-/// deleted app away from being unrecoverable.
+/// Guests may order too. The flag is computed by the server — on for every
+/// user, guests included, while the deployment switch is on — so it is the
+/// switch as the app sees it, not a per-user grant.
 ///
 /// `country` is `GET api/geo`'s answer. It fails closed — an unknown country, a
 /// failed lookup and the moment before the first answer all arrive as nil and
@@ -168,7 +168,7 @@ public func canOrderInstamart(brand: Brand, user: User?, country: String?) -> Bo
     guard let user, !user.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
         return false
     }
-    guard !user.isGuest, user.features.swiggyInstamart else { return false }
+    guard user.features.swiggyInstamart else { return false }
     return (country ?? "").trimmingCharacters(in: .whitespacesAndNewlines).uppercased() == "IN"
 }
 
