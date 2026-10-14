@@ -185,6 +185,7 @@ struct WeekView: View {
         }
         .sheet(isPresented: $model.isAIPromptOpen) {
             AIPromptSheet(
+                guestRemaining: model.aiPromptGuestRemaining,
                 onGenerate: { ingredients, moods, restrictToIngredients in
                     Task {
                         await model.generateWithAI(
@@ -192,6 +193,9 @@ struct WeekView: View {
                             moodCuisines: moods,
                             restrictToIngredients: restrictToIngredients
                         )
+                        // The server counts the attempt, success or not; re-read
+                        // it so the next tap checks the real allowance.
+                        if session.isGuest { await session.refreshUser() }
                     }
                 },
                 onCancel: { model.isAIPromptOpen = false }

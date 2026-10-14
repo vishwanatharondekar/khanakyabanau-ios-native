@@ -7,6 +7,9 @@ struct ShoppingSession: Identifiable {
     let id = UUID()
     var list: ShoppingList
     var weekStartDate: String
+    /// `shoppingPlanKey` of the plan this list was built from. Reopening the
+    /// tab re-probes when it no longer matches, so an edited menu gets a new list.
+    var planKey: String = ""
 }
 
 /// Which slot a dialog or sheet is acting on.
@@ -72,6 +75,8 @@ final class WeekViewModel {
     var editing: SlotTarget?
     var suggesting: SlotTarget?
     var isAIPromptOpen = false
+    /// Guest generations left when the prompt opened; nil for an account.
+    var aiPromptGuestRemaining: Int?
     var isClearConfirmOpen = false
     var shoppingSession: ShoppingSession?
     var guestLimitPrompt: String?
@@ -131,9 +136,20 @@ final class WeekViewModel {
     /// generateWithAI refuses on a week already gone, so opening the prompt
     /// there walks the user through a dialog that silently does nothing at the
     /// end.
-    func openAIPrompt() {
-        guard canEdit else { return }
+    ///
+    /// A guest with no generations left is asked to register instead, as the
+    /// webapp does, rather than filling in a form the server will refuse.
+    /// Returns whether the prompt opened.
+    @discardableResult
+    func openAIPrompt(guestRemaining: Int? = nil) -> Bool {
+        guard canEdit else { return false }
+        if guestRemaining == 0 {
+            guestLimitPrompt = guestLimitCopy(remaining: 0)
+            return false
+        }
+        aiPromptGuestRemaining = guestRemaining
         isAIPromptOpen = true
+        return true
     }
 
     /// Days holding at least one dish.
@@ -495,7 +511,7 @@ final class WeekViewModel {
     }
 
     private func guestLimitCopy(remaining: Int) -> String {
-        "You've used your free AI generations. Create a free account for unlimited access."
+        "You've used all your free AI generations. Create a free account for unlimited access."
     }
 
     // MARK: - Shopping list
@@ -512,25 +528,32 @@ final class WeekViewModel {
     /// the tab bar stays live, and a generation the user walks away from still
     /// finishes and still writes the server's cache, so coming back finds it.
     func openShopping(isGuestAtLimit: Bool) async {
-        // Already showing this week's list — reopening the tab is not a reason
-        // to re-probe, let alone regenerate.
-        if shoppingSession?.weekStartDate == weekStartDate, shoppingState == .ready { return }
+        // Already showing this week's list, built from these same dishes —
+        // reopening the tab is not a reason to re-probe, let alone regenerate.
+        // A changed menu is: the probe then misses the server's plan hash and a
+        // new list is built.
+        if shoppingSession?.weekStartDate == weekStartDate,
+           shoppingSession?.planKey == shoppingPlanKey(plan),
+           shoppingState == .ready { return }
         if let shoppingTask, !shoppingTask.isCancelled { _ = await shoppingTask.value; return }
 
         let task = Task { @MainActor in
             shoppingState = .probing
 
-            let probe = try? await env.ai.shoppingList(for: plan, cachedOnly: true)
+            // Captured once: the list is keyed to the dishes it was asked for,
+            // not to whatever the plan holds by the time the answer lands.
+            let requested = plan
+            let probe = try? await env.ai.shoppingList(for: requested, cachedOnly: true)
             let cached = probe.map { !$0.absent } ?? false
 
             switch shoppingOpenOutcome(
                 weekStartDate: weekStartDate,
                 cached: cached,
-                hasDishes: !plan.allDishNames().isEmpty,
+                hasDishes: !requested.allDishNames().isEmpty,
                 isGuestAtLimit: isGuestAtLimit
             ) {
             case .show:
-                if let probe { apply(probe) }
+                if let probe { apply(probe, builtFrom: requested) }
             case .empty:
                 shoppingState = .empty
             case .past:
@@ -538,7 +561,7 @@ final class WeekViewModel {
             case .limit:
                 shoppingState = .limit
             case .generate:
-                await generateShoppingList()
+                await generateShoppingList(for: requested)
             }
         }
         shoppingTask = task
@@ -548,10 +571,10 @@ final class WeekViewModel {
 
     /// An explicit retry after a failure. Skips the probe — it already missed.
     func retryShopping() async {
-        await generateShoppingList()
+        await generateShoppingList(for: plan)
     }
 
-    private func generateShoppingList() async {
+    private func generateShoppingList(for plan: MealPlan) async {
         shoppingState = .loading
         // Fire at request time, not response, to mirror the webapp's behaviour
         // and capture attempts that fail server-side.
@@ -561,7 +584,7 @@ final class WeekViewModel {
             parameters: [AnalyticsProperties.weekStart: weekStartDate]
         )
         do {
-            apply(try await env.ai.shoppingList(for: plan))
+            apply(try await env.ai.shoppingList(for: plan), builtFrom: plan)
         } catch APIError.guestLimitReached {
             // The ceiling and a real failure want different UI: an account, not
             // a retry.
@@ -575,8 +598,10 @@ final class WeekViewModel {
         }
     }
 
-    private func apply(_ list: ShoppingList) {
-        shoppingSession = ShoppingSession(list: list, weekStartDate: weekStartDate)
+    private func apply(_ list: ShoppingList, builtFrom plan: MealPlan) {
+        shoppingSession = ShoppingSession(
+            list: list, weekStartDate: weekStartDate, planKey: shoppingPlanKey(plan)
+        )
         shoppingState = .ready
     }
 

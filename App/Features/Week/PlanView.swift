@@ -29,6 +29,17 @@ struct PlanView: View {
 
     private let brand = Brand.current
 
+    /// Both generate entries come through here. Mood-open is only counted when
+    /// the prompt actually opens — a guest at the limit sees the register alert.
+    private func openAIPrompt() {
+        let guestRemaining = session.isGuest ? session.user?.remainingAIGenerations : nil
+        guard model.openAIPrompt(guestRemaining: guestRemaining) else { return }
+        env.analytics.track(
+            AnalyticsEvents.Mood.open,
+            category: AnalyticsEvents.Category.mood
+        )
+    }
+
     /// Share the week as a PDF. Lives here rather than in the Meals pane because
     /// the header owns the action, and Shopping shares the same header.
     private func onShare() async {
@@ -84,13 +95,7 @@ struct PlanView: View {
                         canGenerate: canGenerate(brand, for: session.user) && model.canEdit,
                         canImport: canImportPlan(brand, for: session.user),
                         canEdit: canEditPlan(brand),
-                        onGenerate: {
-                            env.analytics.track(
-                                AnalyticsEvents.Mood.open,
-                                category: AnalyticsEvents.Category.mood
-                            )
-                            model.openAIPrompt()
-                        },
+                        onGenerate: { openAIPrompt() },
                         // Never runs while Brand.capabilities.pdfImport is
                         // false, which is how the entry stays out of the menu.
                         // Building the import screen means flipping that
@@ -132,13 +137,7 @@ struct PlanView: View {
                     model: model,
                     onOpenVideo: onOpenVideo,
                     onRequestAccount: onRequestAccount,
-                    onGenerate: {
-                        env.analytics.track(
-                            AnalyticsEvents.Mood.open,
-                            category: AnalyticsEvents.Category.mood
-                        )
-                        model.openAIPrompt()
-                    }
+                    onGenerate: { openAIPrompt() }
                 )
             case .shopping:
                 ShoppingPane(

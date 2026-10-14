@@ -308,6 +308,8 @@ private struct SuggestionCard: View {
 struct AIPromptSheet: View {
     @Environment(\.dismiss) private var dismiss
 
+    /// Guest generations left; a note shows when this is the last one. Nil for accounts.
+    var guestRemaining: Int? = nil
     var onGenerate: ([String], [String], Bool) -> Void
     var onCancel: () -> Void
 
@@ -340,6 +342,14 @@ struct AIPromptSheet: View {
             }
         ) {
             VStack(alignment: .leading, spacing: 20) {
+                // Same threshold and wording as the webapp's toast.
+                if guestRemaining == 1 {
+                    Text("You have 1 AI generation remaining as a guest. Create a free account for unlimited access.")
+                        .kkbFont(.bodySmall)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Kkb.accentText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 VStack(alignment: .leading, spacing: 8) {
                     Text("What's in the pantry?".eyebrow)
                         .kkbFont(.sectionLabel)

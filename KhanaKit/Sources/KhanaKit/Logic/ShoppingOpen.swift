@@ -32,3 +32,23 @@ public func shoppingOpenOutcome(
     if isGuestAtLimit { return .limit }
     return .generate
 }
+
+/// Fingerprint of the dishes a shopping list is built from — the same
+/// day/course/name triples the server hashes to decide whether its stored list
+/// still matches the week.
+///
+/// Kept on the loaded list so reopening the tab can tell "same list" from "the
+/// menu changed since": only the second needs a fresh probe. Images and videos
+/// are left out because the server ignores them too.
+public func shoppingPlanKey(_ plan: MealPlan) -> String {
+    var lines: [String] = []
+    for day in DayOfWeek.allCases {
+        let meals = plan.meals(for: day)
+        for type in MealType.allCases {
+            let meal = meals[type]
+            guard !meal.isEmpty else { continue }
+            lines.append("\(day.key).\(type.key)=\(meal.name)")
+        }
+    }
+    return lines.joined(separator: "\n")
+}
