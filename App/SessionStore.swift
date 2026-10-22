@@ -117,9 +117,14 @@ final class SessionStore {
 
     /// Onboarding writes preferences server-side; this flips the local flag so the
     /// root view swaps to Home without a second profile round trip.
+    /// Set when onboarding hands off; spent by the Plan tab when it starts
+    /// generating the first week. Port of the webapp's `continueFromOnboarding`.
+    var continueFromOnboarding = false
+
     func completeOnboarding() {
         guard var user = state.user else { return }
         user.onboardingCompleted = true
+        continueFromOnboarding = true
         state = .ready(user)
     }
 

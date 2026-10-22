@@ -28,6 +28,17 @@ struct WeekView: View {
                     model.cuisinePreferences = session.user?.cuisinePreferences ?? []
                 }
                 await model.load()
+                // Straight from onboarding: generate the first week here, once.
+                // Only on a week that loaded cleanly, so generation never writes
+                // over one it could not read. Spent before generating, so a
+                // re-run of this task cannot start a second call.
+                if session.continueFromOnboarding, model.errorMessage == nil {
+                    session.continueFromOnboarding = false
+                    await model.generateFirstWeek(
+                        guestRemaining: session.isGuest ? session.user?.remainingAIGenerations : nil
+                    )
+                    if session.isGuest { await session.refreshUser() }
+                }
             }
     }
 

@@ -23,8 +23,12 @@ struct AuthView: View {
     @Namespace private var segmentNamespace
 
     private var canSubmit: Bool {
-        guard email.contains("@"), password.count >= 6 else { return false }
-        return mode == .signIn || !name.trimmingCharacters(in: .whitespaces).isEmpty
+        guard email.contains("@"), !password.isEmpty else { return false }
+        // Sign-in checks nothing about length: an account made on the web may
+        // have a shorter password than this app would ask for.
+        if mode == .signIn { return true }
+        return password.count >= PasswordRules.minLength
+            && !name.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     var body: some View {
@@ -67,7 +71,9 @@ struct AuthView: View {
 
                         KkbTextField(
                             label: "Password",
-                            placeholder: "At least 6 characters",
+                            placeholder: mode == .signIn
+                                ? "Your password"
+                                : "At least \(PasswordRules.minLength) characters",
                             text: $password,
                             isSecure: true,
                             textContentType: mode == .signIn ? .password : .newPassword,

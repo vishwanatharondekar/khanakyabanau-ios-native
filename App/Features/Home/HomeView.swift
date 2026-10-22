@@ -86,6 +86,9 @@ struct HomeView: View {
             }
             if todayModel == nil { todayModel = TodayViewModel(env: env) }
             if instamartModel == nil { instamartModel = InstamartViewModel(env: env) }
+            // The first week is generated on Plan, so that is where onboarding
+            // lands. The Meals pane spends the flag once the week has loaded.
+            if session.continueFromOnboarding { tab = .plan }
             // A notification tapped before this view existed sets the destination
             // during launch, so `onChange` never sees a transition. Consume any
             // value already waiting.

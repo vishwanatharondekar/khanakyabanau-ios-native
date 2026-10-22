@@ -43,6 +43,9 @@ final class MealRepository {
             as: MealPlan.self
         )
         onWeekChanged?(plan.weekStartDate)
+        NotificationCenter.default.post(
+            name: .mealWeekSaved, object: nil, userInfo: ["weekStartDate": plan.weekStartDate]
+        )
         return (response.id, response.userId)
     }
 
@@ -159,4 +162,14 @@ final class MealRepository {
     func clearImageCache() {
         imageCache.removeAll()
     }
+}
+
+extension Notification.Name {
+    /// Posted after a week is saved, with `weekStartDate` in `userInfo`.
+    ///
+    /// Separate from `onWeekChanged`, which also fires on every read and is
+    /// spoken for by the widgets. Today loads once and keeps its copy, so a week
+    /// written on Plan — the first one after onboarding, most visibly — stayed
+    /// invisible there until a pull to refresh.
+    static let mealWeekSaved = Notification.Name("mealWeekSaved")
 }

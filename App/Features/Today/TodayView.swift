@@ -23,6 +23,10 @@ struct TodayView: View {
     var body: some View {
         content(model)
             .task { await model.loadIfNeeded() }
+            .onReceive(NotificationCenter.default.publisher(for: .mealWeekSaved)) { note in
+                guard let week = note.userInfo?["weekStartDate"] as? String else { return }
+                Task { await model.weekSaved(week) }
+            }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { now = Date() }
             }

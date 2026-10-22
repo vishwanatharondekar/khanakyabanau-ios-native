@@ -21,7 +21,6 @@ final class AppEnvironment {
     let translations: TranslationRepository
     let push: PushService
     let prepReminders: PrepReminderScheduler
-    let firstWeek: FirstWeekSeeder
     let widgetSnapshots: WidgetSnapshotWriter
 
     init() {
@@ -45,9 +44,6 @@ final class AppEnvironment {
         self.settings = settings
         let prepReminders = PrepReminderScheduler(meals: self.meals, settings: settings)
         self.prepReminders = prepReminders
-        self.firstWeek = FirstWeekSeeder(
-            ai: self.ai, meals: self.meals, prepReminders: prepReminders
-        )
 
         let meals = self.meals
         let widgetSnapshots = WidgetSnapshotWriter(

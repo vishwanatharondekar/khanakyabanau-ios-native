@@ -19,10 +19,16 @@ struct GuestUpgradeView: View {
     @State private var isSubmitting = false
     @State private var errorMessage: String?
 
-    private var canSubmit: Bool {
-        !name.trimmingCharacters(in: .whitespaces).isEmpty
-            && email.contains("@")
-            && password.count >= 6
+    /// What is stopping the form from being sent, worded for the user; nil
+    /// once it can go. The button never disables on this: a tap on an
+    /// incomplete form names the field to fix rather than doing nothing.
+    private var validationError: String? {
+        if name.trimmingCharacters(in: .whitespaces).isEmpty { return "Enter your name" }
+        if !email.contains("@") { return "Enter a valid email address" }
+        if password.count < PasswordRules.minLength {
+            return "Password needs at least \(PasswordRules.minLength) characters"
+        }
+        return nil
     }
 
     var body: some View {
@@ -31,7 +37,6 @@ struct GuestUpgradeView: View {
             title: "Create your account",
             confirmTitle: "Create account",
             isSaving: isSubmitting,
-            isConfirmEnabled: canSubmit,
             errorMessage: errorMessage,
             onCancel: { dismiss() },
             onConfirm: submit
@@ -68,7 +73,7 @@ struct GuestUpgradeView: View {
                 )
                 KkbTextField(
                     label: "Password",
-                    placeholder: "At least 6 characters",
+                    placeholder: "At least \(PasswordRules.minLength) characters",
                     text: $password,
                     isSecure: true,
                     textContentType: .newPassword,
@@ -91,7 +96,11 @@ struct GuestUpgradeView: View {
     }
 
     private func submit() {
-        guard canSubmit, !isSubmitting else { return }
+        guard !isSubmitting else { return }
+        if let validationError {
+            errorMessage = validationError
+            return
+        }
         isSubmitting = true
         errorMessage = nil
 
@@ -119,4 +128,12 @@ struct GuestUpgradeView: View {
             isSubmitting = false
         }
     }
+}
+
+/// The one password rule the app enforces, shared by sign-up and the guest
+/// upgrade. Android uses the same number; the web form and the server set none.
+/// Sign-in deliberately does not apply it — an account made on the web can
+/// have a shorter password and must still be able to sign in here.
+enum PasswordRules {
+    static let minLength = 4
 }

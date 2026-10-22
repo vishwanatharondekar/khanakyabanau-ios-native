@@ -58,6 +58,19 @@ final class TodayViewModel {
         if errorMessage != nil || Task.isCancelled { hasLoaded = false }
     }
 
+    /// A week saved elsewhere (Plan): reload quietly if it holds today or
+    /// tomorrow. Before the first load there is nothing to bring up to date.
+    func weekSaved(_ weekStartDate: String) async {
+        guard hasLoaded else { return }
+        let today = WeekDates.today()
+        let shown: Set<String> = [
+            WeekDates.format(WeekDates.mondayOf(today)),
+            WeekDates.format(WeekDates.mondayOf(today.adding(days: 1))),
+        ]
+        guard shown.contains(weekStartDate) else { return }
+        await refresh(showSpinner: false)
+    }
+
     func pullToRefresh() async {
         await env.videos.refresh()
         await refresh(showSpinner: false)

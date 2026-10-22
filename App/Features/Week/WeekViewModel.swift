@@ -510,6 +510,19 @@ final class WeekViewModel {
         isGenerating = false
     }
 
+    /// The week generated straight after onboarding — port of the webapp
+    /// planner's `continueFromOnboarding` effect. A week that already has a dish
+    /// is left alone, and a guest with nothing left to spend is told rather than
+    /// sent into a call that cannot succeed.
+    func generateFirstWeek(guestRemaining: Int?) async {
+        guard plan.allDishNames().isEmpty else { return }
+        if guestRemaining == 0 {
+            guestLimitPrompt = guestLimitCopy(remaining: 0)
+            return
+        }
+        await generateWithAI(ingredients: [], moodCuisines: [])
+    }
+
     private func guestLimitCopy(remaining: Int) -> String {
         "You've used all your free AI generations. Create a free account for unlimited access."
     }
