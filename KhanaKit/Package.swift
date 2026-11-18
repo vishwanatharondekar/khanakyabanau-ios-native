@@ -15,6 +15,11 @@ let package = Package(
     ],
     targets: [
         .target(name: "KhanaKit"),
-        .testTarget(name: "KhanaKitTests", dependencies: ["KhanaKit"]),
+        .testTarget(
+            name: "KhanaKitTests",
+            dependencies: ["KhanaKit"],
+            // main-dish-keys.tsv: the web app's keys, for MealKeysTests.
+            resources: [.copy("Fixtures")]
+        ),
     ]
 )

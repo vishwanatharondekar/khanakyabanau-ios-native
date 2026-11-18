@@ -99,15 +99,17 @@ public enum MealSuggestions {
         return Array(dishes.shuffled(using: &generator).prefix(limit))
     }
 
-    /// Concatenates `lists` in order, dropping blanks and case-insensitive repeats.
+    /// Concatenates `lists` in order, keeping the first name per main dish (see
+    /// `MealKeys.mainDishKey`) so the list doesn't spend two slots on "Rajma
+    /// chawal" and "Rajma rice with curd". Drops names with nothing to key on.
     public static func merge(_ lists: [String]...) -> [String] {
         var seen = Set<String>()
         var result: [String] = []
         for list in lists {
             for raw in list {
-                let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !name.isEmpty, seen.insert(name.lowercased()).inserted else { continue }
-                result.append(name)
+                let key = MealKeys.mainDishKey(of: raw)
+                guard !key.isEmpty, seen.insert(key).inserted else { continue }
+                result.append(raw.trimmingCharacters(in: .whitespacesAndNewlines))
             }
         }
         return result
